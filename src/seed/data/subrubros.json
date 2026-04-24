@@ -1,0 +1,118 @@
+[
+  {
+    "nombreCuentaReimputada": "Materia Prima",
+    "nombreSubrubro": "Materia Prima"
+  },
+  {
+    "nombreCuentaReimputada": "Energía Eléctrica",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Repuestos",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "CIF",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Gastos de libreria e imprenta",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Fletes y acarreos",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Publicidad y propaganda",
+    "nombreSubrubro": "Gastos comerciales"
+  },
+  {
+    "nombreCuentaReimputada": "Gastos generales",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Gastos de representación",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Honorarios por servicios",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Gas",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Agua",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Teléfono",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Alquileres",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Gastos de mantenimiento",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Gastos Administrativos",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Seguros",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Gastos Leasing",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Gastos de Importacion",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Otros egresos operativos",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Gastos bancarios",
+    "nombreSubrubro": "Gastos administrativos"
+  },
+  {
+    "nombreCuentaReimputada": "Ventas de mercaderias",
+    "nombreSubrubro": "Venta de mercaderias"
+  },
+  {
+    "nombreCuentaReimputada": "Fason",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Comisiones",
+    "nombreSubrubro": "Gastos comerciales"
+  },
+  {
+    "nombreCuentaReimputada": "Resultados de ventas de bienes de uso",
+    "nombreSubrubro": "Resultados de ventas de bienes de uso"
+  },
+  {
+    "nombreCuentaReimputada": "Ropa de trabajo",
+    "nombreSubrubro": "CIF"
+  },
+  {
+    "nombreCuentaReimputada": "Costo de mercaderia vendida",
+    "nombreSubrubro": "Costo de mercaderia vendida"
+  },
+  {
+    "nombreCuentaReimputada": "Resultados financieros",
+    "nombreSubrubro": "Gastos financieros"
+  },
+  {
+    "nombreCuentaReimputada": "Materia prima",
+    "nombreSubrubro": "Materia Prima"
+  }
+]

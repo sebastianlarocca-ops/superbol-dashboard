@@ -1,0 +1,206 @@
+[
+  {
+    "desde": {
+      "numeroCuenta": 1600,
+      "nombreCuenta": "Mercaderias de reventa",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 6200,
+      "nombreCuenta": "Materia Prima"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 1620,
+      "nombreCuenta": "Materias Primas",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 6200,
+      "nombreCuenta": "Materia Prima"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 2502,
+      "nombreCuenta": "Repuestos",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 2520,
+      "nombreCuenta": "Muebles, útiles e instalaciones"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 2540,
+      "nombreCuenta": "Maquinarias",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 2520,
+      "nombreCuenta": "Muebles, útiles e instalaciones"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 2580,
+      "nombreCuenta": "Equipos de computación",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 2520,
+      "nombreCuenta": "Muebles, útiles e instalaciones"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 3811,
+      "nombreCuenta": "Intereses bancarios por pagar",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": "f001",
+      "nombreCuenta": "Intereses"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6420,
+      "nombreCuenta": "Gastos generales de fabricación",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 6330,
+      "nombreCuenta": "Repuestos"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6420,
+      "nombreCuenta": "Gastos generales de fabricación",
+      "numeroSubcuenta": 2,
+      "nombreSubcuenta": "Costos Indirectos de Fabricacion"
+    },
+    "hacia": {
+      "numeroCuenta": 6678,
+      "nombreCuenta": "CIF"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6540,
+      "nombreCuenta": "gastos de libreria e imprenta",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 6650,
+      "nombreCuenta": "Gastos de libreria e imprenta"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6600,
+      "nombreCuenta": "Gastos generales",
+      "numeroSubcuenta": 2,
+      "nombreSubcuenta": "Empaque"
+    },
+    "hacia": {
+      "numeroCuenta": 6678,
+      "nombreCuenta": "CIF"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6600,
+      "nombreCuenta": "Gastos generales",
+      "numeroSubcuenta": 3,
+      "nombreSubcuenta": "Gastos de Representacion"
+    },
+    "hacia": {
+      "numeroCuenta": 6601,
+      "nombreCuenta": "Gastos de representación"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6760,
+      "nombreCuenta": "Gastos Administrativos",
+      "numeroSubcuenta": 4,
+      "nombreSubcuenta": "Gastos del personal"
+    },
+    "hacia": {
+      "numeroCuenta": 6660,
+      "nombreCuenta": "Honorarios por servicios"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 9999,
+      "nombreCuenta": "Cuenta Puente",
+      "numeroSubcuenta": 0,
+      "nombreSubcuenta": "Subcuenta Puente"
+    },
+    "hacia": {
+      "numeroCuenta": 7000,
+      "nombreCuenta": "Ventas de mercaderias"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 9999,
+      "nombreCuenta": "Cuenta Puente",
+      "numeroSubcuenta": 3,
+      "nombreSubcuenta": "Comisiones Mercado Libre"
+    },
+    "hacia": {
+      "numeroCuenta": 6515,
+      "nombreCuenta": "Comisiones"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6698,
+      "nombreCuenta": "Gastos de recursos humanos",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 6660,
+      "nombreCuenta": "Honorarios por servicios"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6699,
+      "nombreCuenta": "Gastos de seguridad",
+      "numeroSubcuenta": null,
+      "nombreSubcuenta": null
+    },
+    "hacia": {
+      "numeroCuenta": 6660,
+      "nombreCuenta": "Honorarios por servicios"
+    }
+  },
+  {
+    "desde": {
+      "numeroCuenta": 6760,
+      "nombreCuenta": "Gastos Administrativos",
+      "numeroSubcuenta": 5,
+      "nombreSubcuenta": "Capacitacion al Personal"
+    },
+    "hacia": {
+      "numeroCuenta": 6660,
+      "nombreCuenta": "Honorarios por servicios"
+    }
+  }
+]

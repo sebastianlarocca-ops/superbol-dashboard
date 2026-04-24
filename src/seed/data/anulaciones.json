@@ -1,0 +1,12 @@
+[
+  {
+    "cuenta": {
+      "numeroCuenta": 6920,
+      "nombreCuenta": "Otros egresos operativos"
+    },
+    "subcuenta": {
+      "numeroSubcuenta": 3,
+      "nombreSubcuenta": "Fernandez Ezequiel"
+    }
+  }
+]
