@@ -9,3 +9,8 @@ client/dist/
 .DS_Store
 .vscode/
 .idea/
+
+# Local dev sandbox — real accounting data, n8n exports, scratch scripts.
+# Never commit anything in here (except the README).
+scratch/*
+!scratch/README.txt
