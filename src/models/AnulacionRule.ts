@@ -1,4 +1,4 @@
-import { Schema, model, InferSchemaType, Types } from 'mongoose';
+import { Schema, model, Types } from 'mongoose';
 
 /**
  * Rule that marks movements as "anulacion" (void). Mirrors the `Anulaciones`
@@ -28,7 +28,12 @@ anulacionRuleSchema.index(
   { unique: true },
 );
 
-export type AnulacionRule = InferSchemaType<typeof anulacionRuleSchema> & {
+export type AnulacionRule = {
   _id: Types.ObjectId;
+  cuenta: { numeroCuenta: string; nombreCuenta: string };
+  subcuenta: { numeroSubcuenta: string; nombreSubcuenta: string };
+  createdAt?: Date;
+  updatedAt?: Date;
 };
+
 export const AnulacionRuleModel = model('AnulacionRule', anulacionRuleSchema);

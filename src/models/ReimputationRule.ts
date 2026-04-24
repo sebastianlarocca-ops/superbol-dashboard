@@ -1,4 +1,4 @@
-import { Schema, model, InferSchemaType, Types } from 'mongoose';
+import { Schema, model, Types } from 'mongoose';
 
 /**
  * Rule that reassigns accounting movements from an original account/sub-account
@@ -35,7 +35,22 @@ reimputationRuleSchema.index(
   { unique: true },
 );
 
-export type ReimputationRule = InferSchemaType<typeof reimputationRuleSchema> & {
+// Explicit type — Mongoose's InferSchemaType marks nested subdocs as optional
+// even when they're schema-required, which breaks consumers at compile time.
+export type ReimputationRule = {
   _id: Types.ObjectId;
+  desde: {
+    numeroCuenta: string;
+    nombreCuenta: string;
+    numeroSubcuenta: string | null;
+    nombreSubcuenta: string | null;
+  };
+  hacia: {
+    numeroCuenta: string;
+    nombreCuenta: string;
+  };
+  createdAt?: Date;
+  updatedAt?: Date;
 };
+
 export const ReimputationRuleModel = model('ReimputationRule', reimputationRuleSchema);
