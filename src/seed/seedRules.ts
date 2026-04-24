@@ -31,20 +31,20 @@ import {
 
 type ReimputationRaw = {
   desde: {
-    numeroCuenta: number;
+    numeroCuenta: string;
     nombreCuenta: string;
-    numeroSubcuenta: number | null;
+    numeroSubcuenta: string | null;
     nombreSubcuenta: string | null;
   };
   hacia: {
-    numeroCuenta: number | string;
+    numeroCuenta: string;
     nombreCuenta: string;
   };
 };
 
 type AnulacionRaw = {
-  cuenta: { numeroCuenta: number; nombreCuenta: string };
-  subcuenta: { numeroSubcuenta: number; nombreSubcuenta: string };
+  cuenta: { numeroCuenta: string; nombreCuenta: string };
+  subcuenta: { numeroSubcuenta: string; nombreSubcuenta: string };
 };
 
 type SubrubroRaw = {
@@ -69,15 +69,7 @@ const seedReimputations = async (): Promise<number> => {
           'desde.nombreCuenta': row.desde.nombreCuenta,
           'desde.nombreSubcuenta': row.desde.nombreSubcuenta,
         },
-        update: {
-          $set: {
-            desde: row.desde,
-            hacia: {
-              numeroCuenta: String(row.hacia.numeroCuenta),
-              nombreCuenta: row.hacia.nombreCuenta,
-            },
-          },
-        },
+        update: { $set: { desde: row.desde, hacia: row.hacia } },
         upsert: true,
       },
     }));

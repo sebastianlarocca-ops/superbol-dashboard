@@ -13,9 +13,12 @@ import { Schema, model, InferSchemaType, Types } from 'mongoose';
 const reimputationRuleSchema = new Schema(
   {
     desde: {
-      numeroCuenta: { type: Number, required: true },
+      // String everywhere: some plans use alphanumeric codes (f001, z001, g300),
+      // subaccount ids can be 17-digit CUIT-like numbers, and leading zeros
+      // ("0001") are significant.
+      numeroCuenta: { type: String, required: true, trim: true },
       nombreCuenta: { type: String, required: true, trim: true },
-      numeroSubcuenta: { type: Number, default: null },
+      numeroSubcuenta: { type: String, default: null, trim: true },
       nombreSubcuenta: { type: String, default: null, trim: true },
     },
     hacia: {

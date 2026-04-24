@@ -27,21 +27,23 @@ const NON_NUMERIC_RUBRO_OVERRIDES: Record<string, Rubro> = {
 };
 
 /**
- * Classifies a rubro based on numeroCuenta ranges.
+ * Classifies a rubro based on numeroCuenta.
  * Mirrors the logic from the n8n workflow.
  * - 1000-2999 → Activo
  * - 3000-3999 → Pasivo
  * - 6000-6999 → Resultado negativo
  * - 7000-7999 → Resultado positivo
- * - non-numeric codes in NON_NUMERIC_RUBRO_OVERRIDES → explicit rubro
- * - everything else → Cuentas puentes
+ * - codes in NON_NUMERIC_RUBRO_OVERRIDES → explicit rubro
+ * - everything else (including pure-letter codes) → Cuentas puentes
+ *
+ * `numeroCuenta` is always a string (plans use alphanumeric codes like
+ * "z001", "f001", etc., plus leading-zero ids).
  */
-export const classifyRubro = (numeroCuenta: number | string): Rubro => {
-  if (typeof numeroCuenta === 'string') {
-    const key = numeroCuenta.trim().toLowerCase();
-    if (NON_NUMERIC_RUBRO_OVERRIDES[key]) return NON_NUMERIC_RUBRO_OVERRIDES[key];
-  }
-  const n = typeof numeroCuenta === 'number' ? numeroCuenta : parseInt(String(numeroCuenta), 10);
+export const classifyRubro = (numeroCuenta: string): Rubro => {
+  const key = numeroCuenta.trim().toLowerCase();
+  if (NON_NUMERIC_RUBRO_OVERRIDES[key]) return NON_NUMERIC_RUBRO_OVERRIDES[key];
+
+  const n = parseInt(key, 10);
   if (Number.isNaN(n)) return 'Cuentas puentes';
   if (n >= 1000 && n <= 2999) return 'Activo';
   if (n >= 3000 && n <= 3999) return 'Pasivo';

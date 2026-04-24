@@ -11,11 +11,12 @@ import { Schema, model, InferSchemaType, Types } from 'mongoose';
 const anulacionRuleSchema = new Schema(
   {
     cuenta: {
-      numeroCuenta: { type: Number, required: true },
+      // See ReimputationRule for rationale on string over number.
+      numeroCuenta: { type: String, required: true, trim: true },
       nombreCuenta: { type: String, required: true, trim: true },
     },
     subcuenta: {
-      numeroSubcuenta: { type: Number, required: true },
+      numeroSubcuenta: { type: String, required: true, trim: true },
       nombreSubcuenta: { type: String, required: true, trim: true },
     },
   },

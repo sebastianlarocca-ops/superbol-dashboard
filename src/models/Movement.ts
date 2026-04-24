@@ -30,9 +30,9 @@ const movementSchema = new Schema(
 
     // Raw ledger fields
     asiento: { type: Number, required: true },
-    numeroCuenta: { type: Number, required: true },
+    numeroCuenta: { type: String, required: true, trim: true },
     nombreCuenta: { type: String, required: true, trim: true },
-    numeroSubcuenta: { type: Number, default: null },
+    numeroSubcuenta: { type: String, default: null, trim: true },
     nombreSubcuenta: { type: String, default: null, trim: true },
     rubro: { type: String, enum: RUBROS, required: true },
     detalle: { type: String, default: '', trim: true },
