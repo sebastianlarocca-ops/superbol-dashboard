@@ -21,6 +21,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Info,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/axios';
@@ -124,6 +125,9 @@ export function CMVPage() {
 
           {/* Formula block */}
           <FormulaBlock totals={data.totals} />
+
+          {/* How costo financiero is computed */}
+          <CostoFinancieroExplainer />
 
           {/* Top movers */}
           <TopMovers
@@ -265,6 +269,75 @@ function Operator({ icon: Icon }: { icon: typeof Plus }) {
   );
 }
 
+// ─── Costo financiero explainer ─────────────────────────────────────────────
+
+/**
+ * Educational callout that surfaces the meaning of caso A / B and the
+ * direction of the financial result. Permanent (not collapsible) so a
+ * first-time user doesn't have to discover it. Compact enough to not be
+ * visual noise.
+ */
+function CostoFinancieroExplainer() {
+  return (
+    <section className="bg-sky-50 border border-sky-200 rounded-lg p-4 mb-6">
+      <header className="flex items-start gap-2 mb-3">
+        <Info size={16} className="text-sky-700 mt-0.5 shrink-0" />
+        <div>
+          <h4 className="text-sm font-semibold text-sky-900">
+            Cómo se calcula el costo financiero
+          </h4>
+          <p className="text-xs text-sky-800 mt-0.5">
+            Mide la ganancia o pérdida por <strong>tenencia de inventario</strong>: cuánto se
+            revalorizó (o desvalorizó) el stock que pasó de un mes al otro debido al cambio de
+            precio unitario. Se aplica por categoría y luego se suma.
+          </p>
+        </div>
+      </header>
+
+      <div className="grid md:grid-cols-2 gap-3 ml-6">
+        <div className="bg-white rounded-md border border-sky-200 p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-block px-1.5 py-0.5 text-[10px] bg-slate-100 text-slate-700 rounded font-mono">
+              A
+            </span>
+            <span className="text-xs font-semibold text-slate-800">SI &gt; SF</span>
+            <span className="text-xs text-slate-500">(el stock se achicó)</span>
+          </div>
+          <p className="text-xs text-slate-700 leading-relaxed">
+            Las <strong>SF unidades</strong> son las que sobrevivieron del mes anterior, así que
+            son las que se revalorizan.
+          </p>
+          <p className="text-xs text-slate-500 mt-1 font-mono">
+            cf = SF × (precio<sub>actual</sub> − precio<sub>anterior</sub>)
+          </p>
+        </div>
+
+        <div className="bg-white rounded-md border border-sky-200 p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-block px-1.5 py-0.5 text-[10px] bg-slate-100 text-slate-700 rounded font-mono">
+              B
+            </span>
+            <span className="text-xs font-semibold text-slate-800">SI ≤ SF</span>
+            <span className="text-xs text-slate-500">(el stock creció o se mantuvo)</span>
+          </div>
+          <p className="text-xs text-slate-700 leading-relaxed">
+            De las SF unidades, solo las primeras <strong>SI</strong> son "viejas"; las nuevas
+            entraron a precio actual y no aportan al costo financiero.
+          </p>
+          <p className="text-xs text-slate-500 mt-1 font-mono">
+            cf = SI × (precio<sub>actual</sub> − precio<sub>anterior</sub>)
+          </p>
+        </div>
+      </div>
+
+      <p className="text-xs text-sky-800 mt-3 ml-6">
+        <strong>Signo:</strong> + (ganancia) si el precio subió → reduce el CMV y se contabiliza
+        como ingreso por tenencia. − (pérdida) si bajó → aumenta el CMV.
+      </p>
+    </section>
+  );
+}
+
 // ─── Top movers ─────────────────────────────────────────────────────────────
 
 function TopMovers({
@@ -334,13 +407,19 @@ function TopMovers({
 }
 
 function MoverRow({ item, positive }: { item: CMVItem; positive: boolean }) {
+  const casoTitle =
+    item.casoCalculado === 'A'
+      ? 'Caso A: SI > SF — stock se achicó, cf = SF × Δprecio'
+      : 'Caso B: SI ≤ SF — stock creció o se mantuvo, cf = SI × Δprecio';
   return (
     <li className="px-4 py-2 flex items-center gap-3">
       <div className="flex-1 min-w-0">
         <div className="text-slate-800 font-medium truncate">{item.categoria}</div>
         <div className="text-xs text-slate-500">
-          Δp = ${fmtMoney(item.deltaPrecio)} · {item.unidadesAfectadas.toLocaleString()} unid · caso{' '}
-          {item.casoCalculado}
+          Δp = ${fmtMoney(item.deltaPrecio)} · {item.unidadesAfectadas.toLocaleString()} unid ·{' '}
+          <span className="cursor-help underline decoration-dotted" title={casoTitle}>
+            caso {item.casoCalculado}
+          </span>
         </div>
       </div>
       <div
@@ -504,7 +583,14 @@ function ItemsTable({
                 {fmtMoney(it.deltaPrecio)}
               </td>
               <td className="px-3 py-1.5 text-center">
-                <span className="inline-block px-1.5 py-0.5 text-[10px] bg-slate-100 text-slate-700 rounded font-mono">
+                <span
+                  className="inline-block px-1.5 py-0.5 text-[10px] bg-slate-100 text-slate-700 rounded font-mono cursor-help"
+                  title={
+                    it.casoCalculado === 'A'
+                      ? 'Caso A: SI > SF — stock se achicó, cf = SF × Δprecio'
+                      : 'Caso B: SI ≤ SF — stock creció o se mantuvo, cf = SI × Δprecio'
+                  }
+                >
                   {it.casoCalculado}
                 </span>
               </td>
