@@ -287,6 +287,20 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
   try {
     // Parse inventory + CMV
     const invParsed = parseInventory(input.inventory.buffer);
+    // Hard fail if the inventory parsed to nothing: that means the parser
+    // didn't recognize the sheet structure (header missing, wrong tab name,
+    // etc.). Without inventory we can't compute SI/SF/cf, so the batch's
+    // CMV would be just "compras" — wrong answer that looks right. Better
+    // to abort and let the user fix the file than silently corrupt the
+    // period's numbers.
+    if (invParsed.rows.length === 0) {
+      const reasons = invParsed.warnings.map((w) => `[${w.code}] ${w.message}`).join('; ');
+      throw httpError(
+        400,
+        `El inventario no produjo ítems parseables. Revisar el archivo. ` +
+          (reasons ? `Causa: ${reasons}` : ''),
+      );
+    }
     const flatEnriched = allEnriched.flatMap((x) => x.enriched);
     const cmv = calculateCMV({
       periodo,

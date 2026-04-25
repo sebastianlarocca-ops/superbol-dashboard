@@ -50,12 +50,14 @@ export const parseInventory = (buffer: Buffer): InventoryParseResult => {
     blankrows: true,
   });
 
-  // Find header row — it's the one that contains "Suma de INVENTARIO JUNIO"
-  // in column B. Usually row 16, but we don't hard-code.
+  // Find header row — column B contains "Suma de INVENTARIO <mes>" where
+  // <mes> is the month BEFORE the report period (junio for el archivo de julio,
+  // agosto para el archivo de septiembre, etc.). We match by the stable
+  // prefix "inventario" rather than hard-coding the month name.
   let headerRow = -1;
   for (let i = 0; i < rawRows.length && i < 40; i++) {
     const r = rawRows[i];
-    if (typeof r[1] === 'string' && r[1].toLowerCase().includes('inventario junio')) {
+    if (typeof r[1] === 'string' && r[1].toLowerCase().includes('inventario')) {
       headerRow = i;
       break;
     }
@@ -63,7 +65,8 @@ export const parseInventory = (buffer: Buffer): InventoryParseResult => {
   if (headerRow === -1) {
     warnings.push({
       code: 'HEADER_NOT_FOUND',
-      message: 'No se encontró la fila header ("Suma de INVENTARIO JUNIO")',
+      message:
+        'No se encontró la fila header (esperaba columna B con texto que contenga "INVENTARIO")',
     });
     return emptyResult(warnings);
   }
