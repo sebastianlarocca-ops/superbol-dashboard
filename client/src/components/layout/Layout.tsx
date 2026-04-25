@@ -4,6 +4,7 @@ import {
   Upload,
   FileText,
   Calculator,
+  PenSquare,
   Scale,
   ListChecks,
   Settings,
@@ -13,6 +14,7 @@ import clsx from 'clsx';
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/ingesta', label: 'Ingesta', icon: Upload },
+  { to: '/movimientos-manuales', label: 'Mov. manuales', icon: PenSquare },
   { to: '/resultados', label: 'Estado de resultados', icon: FileText },
   { to: '/cmv', label: 'CMV', icon: Calculator },
   { to: '/balance', label: 'Balance', icon: Scale, disabled: true },
