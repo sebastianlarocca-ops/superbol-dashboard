@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/axios';
-import { fmtMoney, fmtMoneyCompact, fmtPeriodo } from '../lib/format';
+import { fmtMoneyCompact, fmtPeriodo } from '../lib/format';
+import { useCurrency } from '../context/CurrencyContext';
 import { PeriodSelector } from '../components/PeriodSelector';
 
 type CMVItem = {
@@ -124,7 +125,7 @@ export function CMVPage() {
           </div>
 
           {/* Formula block */}
-          <FormulaBlock totals={data.totals} />
+          <FormulaBlock totals={data.totals} periodo={periodo} />
 
           {/* How costo financiero is computed */}
           <CostoFinancieroExplainer />
@@ -135,6 +136,7 @@ export function CMVPage() {
             perdidas={data.topPerdidas}
             allItems={data.items}
             costoFinancieroTotal={data.totals.costoFinanciero}
+            periodo={periodo}
           />
 
           {/* Bar chart */}
@@ -142,7 +144,7 @@ export function CMVPage() {
             <h4 className="text-base font-semibold text-slate-800 mb-3">
               Costo financiero por categoría
             </h4>
-            <CFChart items={data.items} />
+            <CFChart items={data.items} periodo={periodo} />
           </section>
 
           {/* Items table */}
@@ -160,6 +162,7 @@ export function CMVPage() {
               cfTotal={data.totals.costoFinanciero}
               sortKey={sortKey}
               sortDir={sortDir}
+              periodo={periodo}
               onSort={(k) => {
                 if (k === sortKey) setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
                 else {
@@ -185,33 +188,34 @@ const LABEL: Record<SortKey, string> = {
 
 // ─── Formula block ──────────────────────────────────────────────────────────
 
-function FormulaBlock({ totals }: { totals: CMVResponse['totals'] }) {
+function FormulaBlock({ totals, periodo }: { totals: CMVResponse['totals']; periodo: string }) {
   const cfSign = totals.costoFinanciero;
   return (
     <section className="bg-white rounded-lg border border-slate-200 p-5 mb-6">
       <h4 className="text-base font-semibold text-slate-800 mb-4">Cálculo</h4>
       {/* Row 1: SI + Compras - SF = CMV Bruto */}
       <div className="flex flex-wrap items-stretch gap-3 mb-3">
-        <FormulaTile label="Stock Inicial (SI)" value={totals.stockInicial} />
+        <FormulaTile label="Stock Inicial (SI)" value={totals.stockInicial} periodo={periodo} />
         <Operator icon={Plus} />
-        <FormulaTile label="Compras" value={totals.compras} hint="cuentas 1600 + 1620 + 6200" />
+        <FormulaTile label="Compras" value={totals.compras} hint="cuentas 1600 + 1620 + 6200" periodo={periodo} />
         <Operator icon={Minus} />
-        <FormulaTile label="Stock Final (SF)" value={totals.stockFinal} />
+        <FormulaTile label="Stock Final (SF)" value={totals.stockFinal} periodo={periodo} />
         <Operator icon={Equal} />
-        <FormulaTile label="CMV Bruto" value={totals.cmvBruto} highlight />
+        <FormulaTile label="CMV Bruto" value={totals.cmvBruto} highlight periodo={periodo} />
       </div>
       {/* Row 2: CMV Bruto - cf = CMV Ajustado */}
       <div className="flex flex-wrap items-stretch gap-3">
-        <FormulaTile label="CMV Bruto" value={totals.cmvBruto} muted />
+        <FormulaTile label="CMV Bruto" value={totals.cmvBruto} muted periodo={periodo} />
         <Operator icon={Minus} />
         <FormulaTile
           label="Costo Financiero"
           value={totals.costoFinanciero}
           hint={cfSign > 0 ? 'ganancia → reduce CMV' : cfSign < 0 ? 'pérdida → aumenta CMV' : ''}
           accentColor={cfSign > 0 ? 'emerald' : cfSign < 0 ? 'red' : 'slate'}
+          periodo={periodo}
         />
         <Operator icon={Equal} />
-        <FormulaTile label="CMV Ajustado" value={totals.cmvAjustado} highlight finalLine />
+        <FormulaTile label="CMV Ajustado" value={totals.cmvAjustado} highlight finalLine periodo={periodo} />
       </div>
     </section>
   );
@@ -225,6 +229,7 @@ function FormulaTile({
   muted,
   finalLine,
   accentColor,
+  periodo,
 }: {
   label: string;
   value: number;
@@ -233,7 +238,10 @@ function FormulaTile({
   muted?: boolean;
   finalLine?: boolean;
   accentColor?: 'emerald' | 'red' | 'slate';
+  periodo: string;
 }) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   return (
     <div
       className={clsx(
@@ -254,7 +262,7 @@ function FormulaTile({
           highlight ? 'text-brand-900' : 'text-slate-800',
         )}
       >
-        $ {fmtMoney(value)}
+        {prefix}{fmt(value, periodo)}
       </div>
       {hint && <div className="text-[10px] text-slate-500 mt-0.5 italic">{hint}</div>}
     </div>
@@ -345,12 +353,16 @@ function TopMovers({
   perdidas,
   allItems,
   costoFinancieroTotal,
+  periodo,
 }: {
   ganancias: CMVItem[];
   perdidas: CMVItem[];
   allItems: CMVItem[];
   costoFinancieroTotal: number;
+  periodo: string;
 }) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   const ganadores = allItems.filter((i) => i.costoFinanciero > 0).length;
   const perdedores = allItems.filter((i) => i.costoFinanciero < 0).length;
   const neutros = allItems.length - ganadores - perdedores;
@@ -371,7 +383,7 @@ function TopMovers({
             <li className="px-4 py-3 text-slate-400">Sin ganancias en el período</li>
           ) : (
             ganancias.map((it) => (
-              <MoverRow key={it._id} item={it} positive />
+              <MoverRow key={it._id} item={it} positive periodo={periodo} />
             ))
           )}
         </ul>
@@ -391,7 +403,7 @@ function TopMovers({
             <li className="px-4 py-3 text-slate-400">Sin pérdidas en el período</li>
           ) : (
             perdidas.map((it) => (
-              <MoverRow key={it._id} item={it} positive={false} />
+              <MoverRow key={it._id} item={it} positive={false} periodo={periodo} />
             ))
           )}
         </ul>
@@ -400,13 +412,15 @@ function TopMovers({
       {/* Summary line spanning both columns */}
       <div className="md:col-span-2 text-xs text-slate-500 text-center">
         {ganadores} ganadores · {perdedores} perdedores · {neutros} neutros · Costo financiero
-        neto: <strong className={costoFinancieroTotal >= 0 ? 'text-emerald-700' : 'text-red-700'}>$ {fmtMoney(costoFinancieroTotal)}</strong>
+        neto: <strong className={costoFinancieroTotal >= 0 ? 'text-emerald-700' : 'text-red-700'}>{prefix}{fmt(costoFinancieroTotal, periodo)}</strong>
       </div>
     </section>
   );
 }
 
-function MoverRow({ item, positive }: { item: CMVItem; positive: boolean }) {
+function MoverRow({ item, positive, periodo }: { item: CMVItem; positive: boolean; periodo: string }) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   const casoTitle =
     item.casoCalculado === 'A'
       ? 'Caso A: SI > SF — stock se achicó, cf = SF × Δprecio'
@@ -416,7 +430,7 @@ function MoverRow({ item, positive }: { item: CMVItem; positive: boolean }) {
       <div className="flex-1 min-w-0">
         <div className="text-slate-800 font-medium truncate">{item.categoria}</div>
         <div className="text-xs text-slate-500">
-          Δp = ${fmtMoney(item.deltaPrecio)} · {item.unidadesAfectadas.toLocaleString()} unid ·{' '}
+          Δp = {prefix}{fmt(item.deltaPrecio, periodo)} · {item.unidadesAfectadas.toLocaleString()} unid ·{' '}
           <span className="cursor-help underline decoration-dotted" title={casoTitle}>
             caso {item.casoCalculado}
           </span>
@@ -428,7 +442,7 @@ function MoverRow({ item, positive }: { item: CMVItem; positive: boolean }) {
           positive ? 'text-emerald-700' : 'text-red-700',
         )}
       >
-        $ {fmtMoney(item.costoFinanciero)}
+        {prefix}{fmt(item.costoFinanciero, periodo)}
       </div>
     </li>
   );
@@ -436,7 +450,9 @@ function MoverRow({ item, positive }: { item: CMVItem; positive: boolean }) {
 
 // ─── Bar chart (divergent) ──────────────────────────────────────────────────
 
-function CFChart({ items }: { items: CMVItem[] }) {
+function CFChart({ items, periodo }: { items: CMVItem[]; periodo: string }) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   // Sort by cf desc and trim to non-zero
   const data = useMemo(
     () =>
@@ -481,7 +497,7 @@ function CFChart({ items }: { items: CMVItem[] }) {
           />
           <Tooltip
             formatter={(v) =>
-              typeof v === 'number' ? `$ ${fmtMoney(v)}` : String(v)
+              typeof v === 'number' ? `${prefix}${fmt(v, periodo)}` : String(v)
             }
             contentStyle={{
               fontSize: 12,
@@ -511,14 +527,18 @@ function ItemsTable({
   cfTotal,
   sortKey,
   sortDir,
+  periodo,
   onSort,
 }: {
   items: CMVItem[];
   cfTotal: number;
   sortKey: SortKey;
   sortDir: 'asc' | 'desc';
+  periodo: string;
   onSort: (k: SortKey) => void;
 }) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   const sorted = useMemo(() => {
     const arr = [...items];
     arr.sort((a, b) => {
@@ -565,10 +585,10 @@ function ItemsTable({
             <tr key={it._id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/40">
               <td className="px-3 py-1.5 text-slate-800 font-medium">{it.categoria}</td>
               <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
-                {fmtMoney(it.valorMesAnterior)}
+                {prefix}{fmt(it.valorMesAnterior, periodo)}
               </td>
               <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
-                {fmtMoney(it.valorMesEnCurso)}
+                {prefix}{fmt(it.valorMesEnCurso, periodo)}
               </td>
               <td
                 className={clsx(
@@ -580,7 +600,7 @@ function ItemsTable({
                       : 'text-slate-500',
                 )}
               >
-                {fmtMoney(it.deltaPrecio)}
+                {prefix}{fmt(it.deltaPrecio, periodo)}
               </td>
               <td className="px-3 py-1.5 text-center">
                 <span
@@ -607,7 +627,7 @@ function ItemsTable({
                       : 'text-slate-500',
                 )}
               >
-                {fmtMoney(it.costoFinanciero)}
+                {prefix}{fmt(it.costoFinanciero, periodo)}
               </td>
               <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
                 {pct.toFixed(1)}%

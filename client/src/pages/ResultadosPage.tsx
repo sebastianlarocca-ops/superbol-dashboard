@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/axios';
-import { fmtMoney, fmtPeriodo } from '../lib/format';
+import { fmtPeriodo } from '../lib/format';
+import { useCurrency } from '../context/CurrencyContext';
 import { PeriodSelector } from '../components/PeriodSelector';
 import { MovementsModal } from '../components/MovementsModal';
 
@@ -112,7 +113,7 @@ export function ResultadosPage() {
           {/* Summary header */}
           <div className="mb-6 flex items-baseline justify-between border-b border-slate-200 pb-3">
             <h3 className="text-lg font-medium text-slate-700">{fmtPeriodo(periodo)}</h3>
-            <ResultadoNetoBadge value={data.resultadoNeto} />
+            <ResultadoNetoBadge value={data.resultadoNeto} periodo={periodo} />
           </div>
 
           <Section
@@ -160,17 +161,7 @@ export function ResultadosPage() {
           />
 
           {/* Final result row */}
-          <div className="mt-6 bg-slate-50 border border-slate-300 rounded-md px-6 py-4 flex items-center justify-between">
-            <span className="font-semibold text-slate-800">RESULTADO NETO</span>
-            <span
-              className={clsx(
-                'text-2xl font-bold tabular-nums',
-                data.resultadoNeto >= 0 ? 'text-emerald-700' : 'text-red-700',
-              )}
-            >
-              $ {fmtMoney(data.resultadoNeto)}
-            </span>
-          </div>
+          <ResultadoNetoRow value={data.resultadoNeto} periodo={periodo} />
 
           {includeAnulados && (
             <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 flex items-center gap-2">
@@ -206,7 +197,9 @@ type SectionProps = {
   onDrillSubrubro: (sub: PnLSubrubro) => void;
 };
 
-function Section({ title, color, bucket, onDrillCuenta, onDrillSubrubro }: SectionProps) {
+function Section({ title, color, bucket, periodo, onDrillCuenta, onDrillSubrubro }: SectionProps) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   const colorMap = {
     emerald: {
       header: 'bg-emerald-50 border-emerald-200',
@@ -232,7 +225,7 @@ function Section({ title, color, bucket, onDrillCuenta, onDrillSubrubro }: Secti
         <h3 className={clsx('font-semibold text-sm uppercase tracking-wide', c.titleText)}>
           {title}
         </h3>
-        <span className={clsx('font-bold tabular-nums', c.total)}>$ {fmtMoney(bucket.total)}</span>
+        <span className={clsx('font-bold tabular-nums', c.total)}>{prefix}{fmt(bucket.total, periodo)}</span>
       </header>
 
       <div className="bg-white">
@@ -243,6 +236,7 @@ function Section({ title, color, bucket, onDrillCuenta, onDrillSubrubro }: Secti
           <SubrubroRow
             key={sub.subrubro}
             sub={sub}
+            periodo={periodo}
             onCuentaClick={(cuenta) => onDrillCuenta(cuenta, sub.subrubro)}
             onSubrubroClick={() => onDrillSubrubro(sub)}
           />
@@ -254,13 +248,17 @@ function Section({ title, color, bucket, onDrillCuenta, onDrillSubrubro }: Secti
 
 function SubrubroRow({
   sub,
+  periodo,
   onCuentaClick,
   onSubrubroClick,
 }: {
   sub: PnLSubrubro;
+  periodo: string;
   onCuentaClick: (c: PnLCuenta) => void;
   onSubrubroClick: () => void;
 }) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   const [open, setOpen] = useState(false);
   return (
     <div className="border-b border-slate-100 last:border-b-0">
@@ -286,7 +284,7 @@ function SubrubroRow({
           {sub.cuentas.length} cuentas
         </button>
         <span className="font-medium tabular-nums text-slate-800 min-w-[140px] text-right">
-          $ {fmtMoney(sub.total)}
+          {prefix}{fmt(sub.total, periodo)}
         </span>
       </div>
 
@@ -307,7 +305,7 @@ function SubrubroRow({
               </span>
               <span className="text-xs text-slate-400 mr-3">{c.movimientos} movs</span>
               <span className="text-xs tabular-nums text-slate-700 min-w-[140px] text-right">
-                $ {fmtMoney(c.saldo)}
+                {prefix}{fmt(c.saldo, periodo)}
               </span>
             </button>
           ))}
@@ -317,14 +315,29 @@ function SubrubroRow({
   );
 }
 
-function ResultadoNetoBadge({ value }: { value: number }) {
+function ResultadoNetoBadge({ value, periodo }: { value: number; periodo: string }) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   const Icon = value > 0 ? TrendingUp : value < 0 ? TrendingDown : Equal;
   const color = value > 0 ? 'text-emerald-700' : value < 0 ? 'text-red-700' : 'text-slate-500';
   return (
     <div className={clsx('flex items-center gap-2 text-sm', color)}>
       <Icon size={16} />
       <span>Resultado neto:</span>
-      <strong className="tabular-nums">$ {fmtMoney(value)}</strong>
+      <strong className="tabular-nums">{prefix}{fmt(value, periodo)}</strong>
+    </div>
+  );
+}
+
+function ResultadoNetoRow({ value, periodo }: { value: number; periodo: string }) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
+  return (
+    <div className="mt-6 bg-slate-50 border border-slate-300 rounded-md px-6 py-4 flex items-center justify-between">
+      <span className="font-semibold text-slate-800">RESULTADO NETO</span>
+      <span className={clsx('text-2xl font-bold tabular-nums', value >= 0 ? 'text-emerald-700' : 'text-red-700')}>
+        {prefix}{fmt(value, periodo)}
+      </span>
     </div>
   );
 }

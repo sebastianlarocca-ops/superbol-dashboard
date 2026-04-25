@@ -78,6 +78,7 @@ export function DashboardPage() {
               previousValue={previous?.ventas}
               previousLabel={previous ? prevPeriodLabel(previous.periodo) : undefined}
               highlight
+              periodo={current.periodo}
             />
             <KPICard
               label="CMV ajustado"
@@ -85,6 +86,7 @@ export function DashboardPage() {
               previousValue={previous?.cmvAjustado}
               previousLabel={previous ? prevPeriodLabel(previous.periodo) : undefined}
               invertSemantics
+              periodo={current.periodo}
             />
             <KPICard
               label="Resultado neto"
@@ -92,6 +94,7 @@ export function DashboardPage() {
               previousValue={previous?.resultadoNeto}
               previousLabel={previous ? prevPeriodLabel(previous.periodo) : undefined}
               highlight
+              periodo={current.periodo}
             />
             <KPICard
               label="Margen bruto"
@@ -156,6 +159,7 @@ export function DashboardPage() {
               prevEgresos={previous?.subrubrosEgreso}
               prevVentas={previous?.ventas}
               prevResultadoNeto={previous?.resultadoNeto}
+              periodo={current.periodo}
             />
           </section>
         </>

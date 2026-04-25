@@ -8,8 +8,10 @@ import {
   Scale,
   ListChecks,
   Settings,
+  TrendingUp,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { CurrencyToggle } from '../CurrencyToggle';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -17,6 +19,7 @@ const navItems = [
   { to: '/movimientos-manuales', label: 'Mov. manuales', icon: PenSquare },
   { to: '/resultados', label: 'Estado de resultados', icon: FileText },
   { to: '/cmv', label: 'CMV', icon: Calculator },
+  { to: '/cotizaciones', label: 'Cotizaciones', icon: TrendingUp },
   { to: '/balance', label: 'Balance', icon: Scale, disabled: true },
   { to: '/movimientos', label: 'Movimientos', icon: ListChecks, disabled: true },
   { to: '/reglas', label: 'Reglas', icon: Settings, disabled: true },
@@ -51,8 +54,9 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="px-6 py-3 text-xs text-slate-500 border-t border-slate-800">
-          v0.1.0
+        <div className="px-4 py-3 border-t border-slate-800 space-y-2">
+          <CurrencyToggle />
+          <p className="text-xs text-slate-500 text-center">v0.1.0</p>
         </div>
       </aside>
       <main className="flex-1 overflow-auto">

@@ -5,6 +5,7 @@ import { IngestaPage } from './pages/IngestaPage';
 import { ResultadosPage } from './pages/ResultadosPage';
 import { CMVPage } from './pages/CMVPage';
 import { MovimientosManualesPage } from './pages/MovimientosManualesPage';
+import { CotizacionesPage } from './pages/CotizacionesPage';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/resultados" element={<ResultadosPage />} />
         <Route path="/cmv" element={<CMVPage />} />
         <Route path="/movimientos-manuales" element={<MovimientosManualesPage />} />
+        <Route path="/cotizaciones" element={<CotizacionesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

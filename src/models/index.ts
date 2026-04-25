@@ -15,3 +15,6 @@ export type { IngestionBatch, IngestionFile } from './IngestionBatch';
 
 export { InventoryItemModel } from './InventoryItem';
 export type { InventoryItem } from './InventoryItem';
+
+export { DolarCotizacionModel } from './DolarCotizacion';
+export type { DolarCotizacion } from './DolarCotizacion';

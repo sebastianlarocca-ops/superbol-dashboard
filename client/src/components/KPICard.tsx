@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { fmtMoney, fmtPeriodo } from '../lib/format';
+import { fmtPeriodo } from '../lib/format';
+import { useCurrency } from '../context/CurrencyContext';
 
 export type KPICardProps = {
   label: string;
@@ -15,6 +16,8 @@ export type KPICardProps = {
   invertSemantics?: boolean;
   /** Used to highlight one or two flagship KPIs. */
   highlight?: boolean;
+  /** Period for currency conversion (MM/YYYY). Required for money values. */
+  periodo?: string | null;
 };
 
 /**
@@ -35,8 +38,11 @@ export function KPICard({
   isPercentage,
   invertSemantics,
   highlight,
+  periodo,
 }: KPICardProps) {
-  const formatted = isPercentage ? `${value.toFixed(1)}%` : `$ ${fmtMoney(value)}`;
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
+  const formatted = isPercentage ? `${value.toFixed(1)}%` : `${prefix}${fmt(value, periodo)}`;
 
   const hasDelta = previousValue !== null && previousValue !== undefined;
   let deltaPct: number | null = null;
@@ -93,7 +99,7 @@ export function KPICard({
           <span className="text-slate-500">
             ({isPercentage
               ? `${(previousValue ?? 0).toFixed(1)}%`
-              : `$ ${fmtMoney(previousValue ?? 0)}`}
+              : `${prefix}${fmt(previousValue ?? 0, periodo)}`}
             {previousLabel && ` · ${previousLabel}`})
           </span>
         </div>

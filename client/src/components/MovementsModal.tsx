@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Loader2, FileText } from 'lucide-react';
 import { api } from '../lib/axios';
-import { fmtMoney } from '../lib/format';
+import { useCurrency } from '../context/CurrencyContext';
 
 type Movement = {
   _id: string;
@@ -66,6 +66,9 @@ export type MovementsModalProps = {
  * movements (no pagination yet — the typical drill-down hits 1-200 movs).
  */
 export function MovementsModal({ open, onClose, title, subtitle, filters }: MovementsModalProps) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
+
   // Close on Escape
   useEffect(() => {
     if (!open) return;
@@ -187,10 +190,10 @@ export function MovementsModal({ open, onClose, title, subtitle, filters }: Move
                       {m.detalle || '-'}
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
-                      {m.debe ? fmtMoney(m.debe) : ''}
+                      {m.debe ? `${prefix}${fmt(m.debe, filters.periodo)}` : ''}
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
-                      {m.haber ? fmtMoney(m.haber) : ''}
+                      {m.haber ? `${prefix}${fmt(m.haber, filters.periodo)}` : ''}
                     </td>
                     <td className="px-3 py-1.5 text-center">
                       {m.sourceType === 'cmv-calc' && (
@@ -231,13 +234,13 @@ export function MovementsModal({ open, onClose, title, subtitle, filters }: Move
             </div>
             <div className="flex items-center gap-6 tabular-nums">
               <span className="text-slate-600">
-                Debe: <strong>{fmtMoney(totalDebe)}</strong>
+                Debe: <strong>{prefix}{fmt(totalDebe, filters.periodo)}</strong>
               </span>
               <span className="text-slate-600">
-                Haber: <strong>{fmtMoney(totalHaber)}</strong>
+                Haber: <strong>{prefix}{fmt(totalHaber, filters.periodo)}</strong>
               </span>
               <span className={saldo >= 0 ? 'text-emerald-700' : 'text-red-700'}>
-                Saldo (haber-debe): <strong>{fmtMoney(saldo)}</strong>
+                Saldo (haber-debe): <strong>{prefix}{fmt(saldo, filters.periodo)}</strong>
               </span>
             </div>
           </footer>

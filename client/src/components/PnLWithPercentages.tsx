@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { fmtMoney } from '../lib/format';
+import { useCurrency } from '../context/CurrencyContext';
 
 type SubrubroRow = {
   subrubro: string;
@@ -17,6 +17,8 @@ export type PnLWithPercentagesProps = {
   prevEgresos?: SubrubroRow[];
   prevVentas?: number;
   prevResultadoNeto?: number;
+  /** Period for currency conversion (MM/YYYY). */
+  periodo?: string | null;
 };
 
 /**
@@ -36,7 +38,10 @@ export function PnLWithPercentages({
   prevEgresos,
   prevVentas,
   prevResultadoNeto,
+  periodo,
 }: PnLWithPercentagesProps) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$ ';
   const hasPrev =
     prevIngresos !== undefined ||
     prevEgresos !== undefined ||
@@ -71,6 +76,9 @@ export function PnLWithPercentages({
               prev={prevIngresos?.find((p) => p.subrubro === s.subrubro)?.total}
               prevVentas={prevVentas}
               hasPrev={hasPrev}
+              periodo={periodo}
+              fmt={fmt}
+              prefix={prefix}
             />
           ))}
           <Row
@@ -81,6 +89,9 @@ export function PnLWithPercentages({
             prevVentas={prevVentas}
             hasPrev={hasPrev}
             bold
+            periodo={periodo}
+            fmt={fmt}
+            prefix={prefix}
           />
 
           {/* EGRESOS section header */}
@@ -99,6 +110,9 @@ export function PnLWithPercentages({
               prevVentas={prevVentas}
               hasPrev={hasPrev}
               isCost
+              periodo={periodo}
+              fmt={fmt}
+              prefix={prefix}
             />
           ))}
           <Row
@@ -110,6 +124,9 @@ export function PnLWithPercentages({
             hasPrev={hasPrev}
             isCost
             bold
+            periodo={periodo}
+            fmt={fmt}
+            prefix={prefix}
           />
 
           {/* RESULTADO NETO */}
@@ -121,7 +138,7 @@ export function PnLWithPercentages({
                 resultadoNeto >= 0 ? 'text-emerald-700' : 'text-red-700',
               )}
             >
-              $ {fmtMoney(resultadoNeto)}
+              {prefix}{fmt(resultadoNeto, periodo)}
             </td>
             <td className="px-4 py-2.5 text-right font-medium text-slate-700 tabular-nums">
               {ventas !== 0 ? `${((resultadoNeto / ventas) * 100).toFixed(1)}%` : '—'}
@@ -149,6 +166,9 @@ function Row({
   hasPrev,
   isCost,
   bold,
+  periodo,
+  fmt,
+  prefix,
 }: {
   label: string;
   value: number;
@@ -158,6 +178,9 @@ function Row({
   hasPrev: boolean;
   isCost?: boolean;
   bold?: boolean;
+  periodo?: string | null;
+  fmt: (v: number, p: string | null | undefined) => string;
+  prefix: string;
 }) {
   const pct = ventas !== 0 ? (value / ventas) * 100 : null;
   // For costs we display % as positive (it's "weight on sales", not direction).
@@ -183,7 +206,7 @@ function Row({
           bold ? 'font-semibold text-slate-900' : 'text-slate-700',
         )}
       >
-        $ {fmtMoney(value)}
+        {prefix}{fmt(value, periodo)}
       </td>
       <td className="px-4 py-1.5 text-right text-slate-600 tabular-nums">
         {displayPct === null ? '—' : `${displayPct.toFixed(1)}%`}

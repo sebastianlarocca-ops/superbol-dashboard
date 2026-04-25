@@ -10,7 +10,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import clsx from 'clsx';
-import { fmtMoneyCompact, fmtMoney, fmtPeriodo } from '../lib/format';
+import { fmtMoneyCompact, fmtPeriodo } from '../lib/format';
+import { useCurrency } from '../context/CurrencyContext';
 
 type EvolucionPoint = {
   periodo: string;
@@ -99,6 +100,9 @@ const SERIES: SeriesDef[] = [
 ];
 
 export function EvolutionChart({ serie }: EvolutionChartProps) {
+  const { convert, currency } = useCurrency();
+  const prefix = currency === 'USD' ? 'USD ' : '$ ';
+
   const [enabled, setEnabled] = useState<Record<SeriesKey, boolean>>(() =>
     SERIES.reduce(
       (acc, s) => ({ ...acc, [s.key]: s.defaultOn }),
@@ -106,11 +110,13 @@ export function EvolutionChart({ serie }: EvolutionChartProps) {
     ),
   );
 
-  // Pivot the data to one row per period with one column per enabled series.
+  // Pivot the data — convert to USD if needed (null = no rate, keep ARS).
   const data = serie.map((p) => {
     const row: Record<string, number | string> = { periodo: fmtPeriodo(p.periodo) };
     for (const s of SERIES) {
-      row[s.key] = s.pick(p);
+      const ars = s.pick(p);
+      const converted = convert(ars, p.periodo);
+      row[s.key] = converted ?? ars;
     }
     return row;
   });
@@ -169,7 +175,7 @@ export function EvolutionChart({ serie }: EvolutionChartProps) {
               width={60}
             />
             <Tooltip
-              formatter={(v) => (typeof v === 'number' ? `$ ${fmtMoney(v)}` : String(v))}
+              formatter={(v) => (typeof v === 'number' ? `${prefix}${fmtMoneyCompact(v)}` : String(v))}
               labelStyle={{ color: '#0f172a', fontWeight: 500 }}
               contentStyle={{
                 fontSize: 12,
