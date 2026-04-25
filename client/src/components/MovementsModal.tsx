@@ -34,6 +34,12 @@ type MovementsResponse = {
   offset: number;
   limit: number;
   count: number;
+  /** Aggregated across ALL matching movs (independent of pagination/limit). */
+  totals: {
+    debe: number;
+    haber: number;
+    saldo: number; // haber - debe
+  };
   movements: Movement[];
 };
 
@@ -72,7 +78,7 @@ export function MovementsModal({ open, onClose, title, subtitle, filters }: Move
 
   const queryString = new URLSearchParams({
     periodo: filters.periodo,
-    limit: '500',
+    limit: '2000',
     ...(filters.numeroCuentaReimputada && {
       numeroCuentaReimputada: filters.numeroCuentaReimputada,
     }),
@@ -92,9 +98,16 @@ export function MovementsModal({ open, onClose, title, subtitle, filters }: Move
 
   if (!open) return null;
 
-  const totalDebe = data?.movements.reduce((s, m) => s + m.debe, 0) ?? 0;
-  const totalHaber = data?.movements.reduce((s, m) => s + m.haber, 0) ?? 0;
-  const saldo = totalHaber - totalDebe;
+  // Use server-side aggregated totals (across ALL matching movs) so the
+  // saldo always matches the P&L line, even when the visible page is
+  // truncated by `limit`. Falls back to local sum only while loading.
+  const totalDebe =
+    data?.totals?.debe ?? data?.movements.reduce((s, m) => s + m.debe, 0) ?? 0;
+  const totalHaber =
+    data?.totals?.haber ?? data?.movements.reduce((s, m) => s + m.haber, 0) ?? 0;
+  const saldo =
+    data?.totals?.saldo ?? totalHaber - totalDebe;
+  const truncated = data ? data.total > data.count : false;
 
   return (
     <div
@@ -203,9 +216,17 @@ export function MovementsModal({ open, onClose, title, subtitle, filters }: Move
           <footer className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
             <div className="flex items-center gap-2 text-slate-500">
               <FileText size={14} />
-              Mostrando {data.count} de {data.total}
-              {data.total > data.count && (
-                <span className="text-amber-700">(truncado a {data.limit})</span>
+              {truncated ? (
+                <>
+                  <span>
+                    Mostrando {data.count} de {data.total}
+                  </span>
+                  <span className="text-amber-700 font-medium">
+                    (truncado — el saldo total contempla los {data.total} movs)
+                  </span>
+                </>
+              ) : (
+                <span>{data.total} movimiento{data.total !== 1 ? 's' : ''}</span>
               )}
             </div>
             <div className="flex items-center gap-6 tabular-nums">

@@ -196,7 +196,9 @@ router.get('/movements', async (req: Request, res: Response, next: NextFunction)
     const empresa = parseEmpresa(req, res);
     if (empresa === null) return;
 
-    const limit = Math.min(parseInt((req.query.limit as string) ?? '200', 10) || 200, 1000);
+    // Bumped from 200/1000 to 500/5000: a single popular cuenta can easily
+    // hit ~1k movs in a heavy month (e.g. cuenta 7000 in septiembre = 529).
+    const limit = Math.min(parseInt((req.query.limit as string) ?? '500', 10) || 500, 5000);
     const offset = Math.max(parseInt((req.query.offset as string) ?? '0', 10) || 0, 0);
 
     const filter: Record<string, unknown> = { periodo };
@@ -212,8 +214,28 @@ router.get('/movements', async (req: Request, res: Response, next: NextFunction)
     if (req.query.anulacion === 'true') filter.anulacion = true;
     else if (req.query.anulacion === 'false') filter.anulacion = false;
 
-    const [total, movements] = await Promise.all([
-      MovementModel.countDocuments(filter),
+    // Server-side aggregation of debe/haber across ALL matching docs.
+    // Crucial for the modal footer: when results are truncated by limit,
+    // the saldo footer still shows the real total saldo (which must match
+    // the line in the P&L). Without this, a heavy cuenta truncated to 500
+    // would show a wrong saldo.
+    const [aggResult, movements] = await Promise.all([
+      MovementModel.aggregate<{
+        _id: null;
+        total: number;
+        totalDebe: number;
+        totalHaber: number;
+      }>([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            totalDebe: { $sum: '$debe' },
+            totalHaber: { $sum: '$haber' },
+          },
+        },
+      ]),
       MovementModel.find(filter)
         .sort({ fechaISO: 1, asiento: 1 })
         .skip(offset)
@@ -221,13 +243,21 @@ router.get('/movements', async (req: Request, res: Response, next: NextFunction)
         .lean(),
     ]);
 
+    const agg = aggResult[0] ?? { total: 0, totalDebe: 0, totalHaber: 0 };
+
     res.json({
       periodo,
       empresa: empresa ?? null,
-      total,
+      total: agg.total,
       offset,
       limit,
       count: movements.length,
+      // Aggregated totals across ALL matching movs (not just the visible page).
+      totals: {
+        debe: agg.totalDebe,
+        haber: agg.totalHaber,
+        saldo: agg.totalHaber - agg.totalDebe, // matches P&L saldo convention (haber-debe)
+      },
       movements,
     });
   } catch (err) {
