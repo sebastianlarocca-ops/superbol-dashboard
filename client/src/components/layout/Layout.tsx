@@ -1,11 +1,20 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Upload, FileText, Scale, ListChecks, Settings } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Upload,
+  FileText,
+  Calculator,
+  Scale,
+  ListChecks,
+  Settings,
+} from 'lucide-react';
 import clsx from 'clsx';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/ingesta', label: 'Ingesta', icon: Upload },
   { to: '/resultados', label: 'Estado de resultados', icon: FileText },
+  { to: '/cmv', label: 'CMV', icon: Calculator },
   { to: '/balance', label: 'Balance', icon: Scale, disabled: true },
   { to: '/movimientos', label: 'Movimientos', icon: ListChecks, disabled: true },
   { to: '/reglas', label: 'Reglas', icon: Settings, disabled: true },
