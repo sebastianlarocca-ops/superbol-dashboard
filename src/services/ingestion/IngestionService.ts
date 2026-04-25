@@ -203,7 +203,9 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
   for (const l of input.ledgers) {
     const parsed = parseLedger(l.buffer, { empresa: l.empresa, archivo: l.archivo });
     parserWarnings.push(...parsed.warnings);
-    periodos.add(parsed.periodo);
+    // Skip the sentinel "00/0000" — that's what the parser emits when the
+    // file has no movimientos (legitimate for "empresas pantalla" like POINT).
+    if (parsed.periodo !== '00/0000') periodos.add(parsed.periodo);
     const enriched = enrichMovements(parsed.movements, {
       reimputator,
       anulacionTagger,
@@ -213,6 +215,12 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
     allEnriched.push({ ledgerInput: l, enriched: enriched.movements });
   }
 
+  if (periodos.size === 0) {
+    throw httpError(
+      400,
+      'Ningún mayor tiene movimientos — no se puede inferir el período',
+    );
+  }
   if (periodos.size > 1) {
     throw httpError(
       400,
