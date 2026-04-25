@@ -11,7 +11,7 @@ export { SubrubroMapModel } from './SubrubroMap';
 export type { SubrubroMap } from './SubrubroMap';
 
 export { IngestionBatchModel } from './IngestionBatch';
-export type { IngestionBatch } from './IngestionBatch';
+export type { IngestionBatch, IngestionFile } from './IngestionBatch';
 
 export { InventoryItemModel } from './InventoryItem';
 export type { InventoryItem } from './InventoryItem';
