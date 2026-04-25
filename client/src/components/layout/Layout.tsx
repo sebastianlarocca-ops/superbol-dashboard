@@ -5,7 +5,7 @@ import clsx from 'clsx';
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/ingesta', label: 'Ingesta', icon: Upload },
-  { to: '/resultados', label: 'Estado de resultados', icon: FileText, disabled: true },
+  { to: '/resultados', label: 'Estado de resultados', icon: FileText },
   { to: '/balance', label: 'Balance', icon: Scale, disabled: true },
   { to: '/movimientos', label: 'Movimientos', icon: ListChecks, disabled: true },
   { to: '/reglas', label: 'Reglas', icon: Settings, disabled: true },

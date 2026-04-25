@@ -54,6 +54,37 @@ const parseEmpresa = (req: Request, res: Response): Empresa | undefined | null =
   return raw as Empresa;
 };
 
+// ─── /periodos ──────────────────────────────────────────────────────────────
+
+/**
+ * Lists all periods that have at least one successful batch. Used by the
+ * frontend to populate the period selector. Sorted by createdAt desc so
+ * the most recent period appears first.
+ */
+router.get('/periodos', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const batches = await IngestionBatchModel.find({ status: 'success' })
+      .sort({ createdAt: -1 })
+      .select('periodo createdAt stats')
+      .lean();
+    // Dedupe by periodo (most recent batch wins) but preserve order.
+    const seen = new Set<string>();
+    const periodos: { periodo: string; createdAt: string; movs: number }[] = [];
+    for (const b of batches) {
+      if (seen.has(b.periodo)) continue;
+      seen.add(b.periodo);
+      periodos.push({
+        periodo: b.periodo,
+        createdAt: (b.createdAt as Date).toISOString(),
+        movs: b.stats?.movementsInserted ?? 0,
+      });
+    }
+    res.json({ count: periodos.length, periodos });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── /pnl ───────────────────────────────────────────────────────────────────
 
 router.get('/pnl', async (req: Request, res: Response, next: NextFunction) => {
