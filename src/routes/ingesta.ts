@@ -92,6 +92,40 @@ router.post(
   },
 );
 
+/**
+ * Pre-flight check: does a successful batch already exist for the given
+ * periodo? The UI calls this when the user picks a period so it can warn
+ * before they pick files. Returns the existing batch's empresas + stats so
+ * the UI can show "ya hay datos para este periodo" with detail.
+ */
+router.get('/check', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const periodo = (req.query.periodo as string | undefined)?.trim();
+    if (!periodo || !/^\d{2}\/\d{4}$/.test(periodo)) {
+      res.status(400).json({ error: 'Query "periodo" requerido en formato MM/YYYY' });
+      return;
+    }
+    const batch = await IngestionBatchModel.findOne({ periodo, status: 'success' })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (!batch) {
+      res.json({ exists: false, periodo });
+      return;
+    }
+    res.json({
+      exists: true,
+      periodo,
+      batchId: batch._id,
+      status: batch.status,
+      createdAt: batch.createdAt,
+      files: batch.files,
+      stats: batch.stats,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** List recent batches (most recent first). */
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
