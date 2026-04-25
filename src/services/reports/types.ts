@@ -74,3 +74,25 @@ export type BalanceQuery = {
   periodo: string;
   empresa?: Empresa;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Evolución (multi-period series for the dashboard)
+
+export type EvolucionPoint = {
+  periodo: string; // "MM/YYYY"
+  // KPIs
+  ventas: number; // saldo del subrubro "Venta de mercaderias"
+  cmvAjustado: number; // signed: positive = costo
+  resultadoNeto: number;
+  ingresosTotal: number;
+  egresosTotal: number;
+  // Subrubro breakdowns for the chart toggles
+  subrubrosIngreso: { subrubro: string; total: number }[];
+  subrubrosEgreso: { subrubro: string; total: number }[];
+};
+
+export type EvolucionResponse = {
+  count: number;
+  /** Sorted ascending by periodo (oldest first) — natural reading order on a line chart. */
+  serie: EvolucionPoint[];
+};

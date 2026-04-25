@@ -1,11 +1,14 @@
 import { PipelineStage } from 'mongoose';
 import { MovementModel } from '../../models';
 import { Rubro } from '../../types/empresa';
+import { IngestionBatchModel } from '../../models';
 import {
   BalanceBucket,
   BalanceCuenta,
   BalanceQuery,
   BalanceResponse,
+  EvolucionPoint,
+  EvolucionResponse,
   PnLBucket,
   PnLCuenta,
   PnLQuery,
@@ -213,4 +216,74 @@ const buildBalanceBucket = (rows: GroupedRow[], rubro: Rubro): BalanceBucket => 
   cuentas.sort((a, b) => b.saldo - a.saldo);
   const total = cuentas.reduce((s, c) => s + c.saldo, 0);
   return { total, cuentas };
+};
+
+// ─── Evolución (multi-period) ───────────────────────────────────────────────
+
+/**
+ * Multi-period series for the dashboard. Returns one EvolucionPoint per
+ * period that has a successful batch in the DB, sorted ASC (oldest first).
+ *
+ * Implementation runs `queryPnL` once per period sequentially. For
+ * 12 months / year the total cost is <2s and easily cacheable on the
+ * client. If we ever need more, swap for a single multi-period $facet
+ * aggregation.
+ *
+ * Anulaciones are excluded (same default as P&L view) and CMV pseudo-movs
+ * are included (they belong in the financial picture).
+ *
+ * `ventas` comes from looking up the "Venta de mercaderias" subrubro
+ * total inside the ingresos bucket. CMV ajustado lives on the batch
+ * stats — no need to recompute.
+ */
+export const queryEvolucion = async (): Promise<EvolucionResponse> => {
+  // List periods that have a successful batch (most recent batch per period)
+  const batches = await IngestionBatchModel.find({ status: 'success' })
+    .sort({ createdAt: -1 })
+    .lean();
+  const seenPeriodos = new Set<string>();
+  const orderedPeriodos: { periodo: string; cmvAjustado: number }[] = [];
+  for (const b of batches) {
+    if (seenPeriodos.has(b.periodo)) continue;
+    seenPeriodos.add(b.periodo);
+    orderedPeriodos.push({
+      periodo: b.periodo,
+      cmvAjustado: b.stats?.cmvAjustado ?? 0,
+    });
+  }
+
+  // Sort ascending by periodo (MM/YYYY string sort works because we
+  // pad both fields with leading zeros — but only by year+month order
+  // that string sort respects partly). Convert to YYYY-MM for proper sort.
+  orderedPeriodos.sort((a, b) => {
+    const [am, ay] = a.periodo.split('/');
+    const [bm, by] = b.periodo.split('/');
+    return ay !== by ? Number(ay) - Number(by) : Number(am) - Number(bm);
+  });
+
+  const serie: EvolucionPoint[] = [];
+  for (const { periodo, cmvAjustado } of orderedPeriodos) {
+    // Reuse the P&L query — same defaults (anulados excluded, etc.)
+    const pnl = await queryPnL({ periodo, includeAnulados: false });
+    const ventas =
+      pnl.ingresos.subrubros.find((s) => s.subrubro === 'Venta de mercaderias')?.total ?? 0;
+    serie.push({
+      periodo,
+      ventas,
+      cmvAjustado,
+      resultadoNeto: pnl.resultadoNeto,
+      ingresosTotal: pnl.ingresos.total,
+      egresosTotal: pnl.egresos.total,
+      subrubrosIngreso: pnl.ingresos.subrubros.map((s) => ({
+        subrubro: s.subrubro,
+        total: s.total,
+      })),
+      subrubrosEgreso: pnl.egresos.subrubros.map((s) => ({
+        subrubro: s.subrubro,
+        total: s.total,
+      })),
+    });
+  }
+
+  return { count: serie.length, serie };
 };

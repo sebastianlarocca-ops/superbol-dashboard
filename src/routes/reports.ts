@@ -5,7 +5,7 @@ import {
   InventoryItemModel,
   MovementModel,
 } from '../models';
-import { queryBalance, queryPnL } from '../services/reports/queries';
+import { queryBalance, queryEvolucion, queryPnL } from '../services/reports/queries';
 import { EMPRESAS, Empresa } from '../types/empresa';
 
 /**
@@ -80,6 +80,23 @@ router.get('/periodos', async (_req: Request, res: Response, next: NextFunction)
       });
     }
     res.json({ count: periodos.length, periodos });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── /evolucion ─────────────────────────────────────────────────────────────
+
+/**
+ * Multi-period series for the dashboard line chart and KPI deltas.
+ * Returns one point per period that has a successful batch, sorted ASC.
+ * Each point includes ventas, cmvAjustado, resultadoNeto, and subrubros
+ * for ingresos/egresos to power the chart toggles.
+ */
+router.get('/evolucion', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await queryEvolucion();
+    res.json(result);
   } catch (err) {
     next(err);
   }
