@@ -54,6 +54,58 @@ const parseEmpresa = (req: Request, res: Response): Empresa | undefined | null =
   return raw as Empresa;
 };
 
+// Enumerate all MM/YYYY periods between desde and hasta (inclusive).
+// Uses numeric comparison so cross-year ranges work correctly.
+function periodsInRange(desde: string, hasta: string): string[] {
+  const [dm, dy] = desde.split('/').map(Number);
+  const [hm, hy] = hasta.split('/').map(Number);
+  const result: string[] = [];
+  let m = dm, y = dy;
+  while (y < hy || (y === hy && m <= hm)) {
+    result.push(`${String(m).padStart(2, '0')}/${y}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return result;
+}
+
+// Parse period filter supporting both single `periodo` and range `periodoDesde`+`periodoHasta`.
+// Returns null + sends 400 on failure (caller must return early).
+function parsePeriodFilter(
+  req: Request,
+  res: Response,
+): Record<string, unknown> | null {
+  const single = (req.query.periodo as string | undefined)?.trim();
+  const desde = (req.query.periodoDesde as string | undefined)?.trim();
+  const hasta = (req.query.periodoHasta as string | undefined)?.trim();
+
+  if (single) {
+    if (!PERIODO_RE.test(single)) {
+      res.status(400).json({ error: 'Query "periodo" inválido: usar formato MM/YYYY' });
+      return null;
+    }
+    return { periodo: single };
+  }
+
+  if (desde && hasta) {
+    if (!PERIODO_RE.test(desde) || !PERIODO_RE.test(hasta)) {
+      res.status(400).json({ error: 'periodoDesde y periodoHasta deben ser MM/YYYY' });
+      return null;
+    }
+    const periodos = periodsInRange(desde, hasta);
+    if (periodos.length === 0) {
+      res.status(400).json({ error: 'periodoDesde debe ser ≤ periodoHasta' });
+      return null;
+    }
+    return { periodo: { $in: periodos } };
+  }
+
+  res.status(400).json({
+    error: 'Requerido: "periodo" (MM/YYYY) o "periodoDesde"+"periodoHasta"',
+  });
+  return null;
+}
+
 // ─── /periodos ──────────────────────────────────────────────────────────────
 
 /**
@@ -187,54 +239,106 @@ router.get('/cmv', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// ─── /movements (drill-down) ────────────────────────────────────────────────
+// ─── /movements/distinct/* (column filter values) ───────────────────────────
+
+// Returns distinct (numeroCuentaReimputada, nombreCuentaReimputada) pairs for
+// the column filter dropdown. Accepts single periodo or periodoDesde+periodoHasta.
+router.get('/movements/distinct/cuenta', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const periodFilter = parsePeriodFilter(req, res);
+    if (!periodFilter) return;
+
+    const values = await MovementModel.aggregate<{ numero: string; nombre: string }>([
+      { $match: periodFilter },
+      { $group: { _id: '$numeroCuentaReimputada', nombre: { $first: '$nombreCuentaReimputada' } } },
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, numero: '$_id', nombre: 1 } },
+    ]);
+
+    res.json({ values });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Returns distinct nombreSubcuenta values (nulls excluded).
+router.get('/movements/distinct/subcuenta', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const periodFilter = parsePeriodFilter(req, res);
+    if (!periodFilter) return;
+
+    const values = (
+      await MovementModel.distinct('nombreSubcuenta', {
+        ...periodFilter,
+        nombreSubcuenta: { $ne: null },
+      })
+    ).sort() as string[];
+
+    res.json({ values });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── /movements (drill-down + full ledger browser) ──────────────────────────
+//
+// Supports two period modes:
+//   - Single: ?periodo=MM/YYYY          (used by MovementsModal)
+//   - Range:  ?periodoDesde=MM/YYYY&periodoHasta=MM/YYYY  (used by MovimientosPage)
+//
+// Column filters (all optional, multi-value via comma-separated):
+//   cuentas=6200,7900        → numeroCuentaReimputada $in (new multi-select)
+//   subcuentas=Sub A,Sub B   → nombreSubcuenta $in
+//   detalle=texto            → case-insensitive regex contains
+//   numeroCuentaReimputada   → legacy single-value (backward compat for modal)
+//   subrubro / rubroReimputada / sourceType / anulacion → unchanged
 
 router.get('/movements', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const periodo = parsePeriodo(req, res);
-    if (!periodo) return;
+    const periodFilter = parsePeriodFilter(req, res);
+    if (!periodFilter) return;
     const empresa = parseEmpresa(req, res);
     if (empresa === null) return;
 
-    // Bumped from 200/1000 to 500/5000: a single popular cuenta can easily
-    // hit ~1k movs in a heavy month (e.g. cuenta 7000 in septiembre = 529).
     const limit = Math.min(parseInt((req.query.limit as string) ?? '500', 10) || 500, 5000);
     const offset = Math.max(parseInt((req.query.offset as string) ?? '0', 10) || 0, 0);
 
-    const filter: Record<string, unknown> = { periodo };
+    const filter: Record<string, unknown> = { ...periodFilter };
     if (empresa) filter.empresa = empresa;
-    if (req.query.numeroCuentaReimputada)
+
+    // Cuenta filter: multi-value (new) or single legacy
+    const cuentasParam = (req.query.cuentas as string | undefined)?.trim();
+    if (cuentasParam) {
+      const vals = cuentasParam.split(',').map((s) => s.trim()).filter(Boolean);
+      filter.numeroCuentaReimputada = vals.length === 1 ? vals[0] : { $in: vals };
+    } else if (req.query.numeroCuentaReimputada) {
       filter.numeroCuentaReimputada = req.query.numeroCuentaReimputada;
-    if (req.query.subrubro) filter.subrubro = req.query.subrubro;
+    }
+
+    // Subcuenta filter: multi-value nombreSubcuenta
+    const subcuentasParam = (req.query.subcuentas as string | undefined)?.trim();
+    if (subcuentasParam) {
+      const vals = subcuentasParam.split(',').map((s) => s.trim()).filter(Boolean);
+      filter.nombreSubcuenta = vals.length === 1 ? vals[0] : { $in: vals };
+    } else if (req.query.subrubro) {
+      filter.subrubro = req.query.subrubro;
+    }
+
+    // Detalle contains (case-insensitive)
+    if (req.query.detalle) {
+      const escaped = (req.query.detalle as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.detalle = { $regex: escaped, $options: 'i' };
+    }
+
     if (req.query.rubroReimputada) filter.rubroReimputada = req.query.rubroReimputada;
     if (req.query.sourceType) filter.sourceType = req.query.sourceType;
-
-    // Anulación filter: explicit boolean, since by default we'd want to show
-    // ALL movements in a drill-down (the user came here to see everything).
     if (req.query.anulacion === 'true') filter.anulacion = true;
     else if (req.query.anulacion === 'false') filter.anulacion = false;
 
-    // Server-side aggregation of debe/haber across ALL matching docs.
-    // Crucial for the modal footer: when results are truncated by limit,
-    // the saldo footer still shows the real total saldo (which must match
-    // the line in the P&L). Without this, a heavy cuenta truncated to 500
-    // would show a wrong saldo.
     const [aggResult, movements] = await Promise.all([
-      MovementModel.aggregate<{
-        _id: null;
-        total: number;
-        totalDebe: number;
-        totalHaber: number;
-      }>([
+      MovementModel.aggregate<{ _id: null; total: number; totalDebe: number; totalHaber: number }>([
         { $match: filter },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            totalDebe: { $sum: '$debe' },
-            totalHaber: { $sum: '$haber' },
-          },
-        },
+        { $group: { _id: null, total: { $sum: 1 }, totalDebe: { $sum: '$debe' }, totalHaber: { $sum: '$haber' } } },
       ]),
       MovementModel.find(filter)
         .sort({ fechaISO: 1, asiento: 1 })
@@ -246,17 +350,15 @@ router.get('/movements', async (req: Request, res: Response, next: NextFunction)
     const agg = aggResult[0] ?? { total: 0, totalDebe: 0, totalHaber: 0 };
 
     res.json({
-      periodo,
       empresa: empresa ?? null,
       total: agg.total,
       offset,
       limit,
       count: movements.length,
-      // Aggregated totals across ALL matching movs (not just the visible page).
       totals: {
         debe: agg.totalDebe,
         haber: agg.totalHaber,
-        saldo: agg.totalHaber - agg.totalDebe, // matches P&L saldo convention (haber-debe)
+        saldo: agg.totalHaber - agg.totalDebe,
       },
       movements,
     });

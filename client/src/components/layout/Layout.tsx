@@ -21,7 +21,7 @@ const navItems = [
   { to: '/cmv', label: 'CMV', icon: Calculator },
   { to: '/cotizaciones', label: 'Cotizaciones', icon: TrendingUp },
   { to: '/balance', label: 'Balance', icon: Scale, disabled: true },
-  { to: '/movimientos', label: 'Movimientos', icon: ListChecks, disabled: true },
+  { to: '/movimientos', label: 'Movimientos', icon: ListChecks },
   { to: '/reglas', label: 'Reglas', icon: Settings, disabled: true },
 ];
 

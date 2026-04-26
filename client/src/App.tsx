@@ -6,6 +6,7 @@ import { ResultadosPage } from './pages/ResultadosPage';
 import { CMVPage } from './pages/CMVPage';
 import { MovimientosManualesPage } from './pages/MovimientosManualesPage';
 import { CotizacionesPage } from './pages/CotizacionesPage';
+import { MovimientosPage } from './pages/MovimientosPage';
 
 export default function App() {
   return (
@@ -13,9 +14,10 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/ingesta" element={<IngestaPage />} />
+        <Route path="/movimientos-manuales" element={<MovimientosManualesPage />} />
         <Route path="/resultados" element={<ResultadosPage />} />
         <Route path="/cmv" element={<CMVPage />} />
-        <Route path="/movimientos-manuales" element={<MovimientosManualesPage />} />
+        <Route path="/movimientos" element={<MovimientosPage />} />
         <Route path="/cotizaciones" element={<CotizacionesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
