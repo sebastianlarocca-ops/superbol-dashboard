@@ -5,7 +5,6 @@ import {
   FileText,
   Calculator,
   PenSquare,
-  Scale,
   ListChecks,
   Settings,
   TrendingUp,
@@ -20,9 +19,8 @@ const navItems = [
   { to: '/resultados', label: 'Estado de resultados', icon: FileText },
   { to: '/cmv', label: 'CMV', icon: Calculator },
   { to: '/cotizaciones', label: 'Cotizaciones', icon: TrendingUp },
-  { to: '/balance', label: 'Balance', icon: Scale, disabled: true },
   { to: '/movimientos', label: 'Movimientos', icon: ListChecks },
-  { to: '/reglas', label: 'Reglas', icon: Settings, disabled: true },
+  { to: '/reglas', label: 'Reglas', icon: Settings },
 ];
 
 export function Layout() {
@@ -34,7 +32,7 @@ export function Layout() {
           <p className="text-xs text-slate-400">Dashboard contable</p>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map(({ to, label, icon: Icon, disabled }) => (
+          {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -42,7 +40,6 @@ export function Layout() {
               className={({ isActive }) =>
                 clsx(
                   'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
-                  disabled && 'opacity-40 pointer-events-none',
                   isActive
                     ? 'bg-brand-600 text-white'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white',
