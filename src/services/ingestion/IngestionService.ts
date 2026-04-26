@@ -1,11 +1,10 @@
 import { createHash } from 'crypto';
-import mongoose, { Types } from 'mongoose';
+import { Types } from 'mongoose';
 
 import {
   AnulacionRule,
   IngestionBatch,
   IngestionBatchModel,
-  IngestionFile,
   InventoryItemModel,
   Movement,
   MovementModel,
@@ -16,15 +15,15 @@ import {
   SubrubroMapModel,
 } from '../../models';
 import { Empresa, classifyRubro } from '../../types/empresa';
-import { calculateCMV } from '../cmv/CMVCalculator';
-import { CMVPseudoMovement } from '../cmv/types';
+import { calculateCMV, enrichInventoryItem } from '../cmv/CMVCalculator';
+import { CMVPseudoMovement, CMVWarning } from '../cmv/types';
 import { AnulacionTagger } from '../enrichment/AnulacionTagger';
 import { Reimputator } from '../enrichment/Reimputator';
 import { SubrubroEnricher } from '../enrichment/SubrubroEnricher';
 import { enrichMovements } from '../enrichment/pipeline';
 import { EnrichedMovement, EnrichmentWarning } from '../enrichment/types';
 import { parseInventory } from '../inventory/InventoryParser';
-import { InventoryParseWarning } from '../inventory/types';
+import { InventoryParseWarning, InventoryParsedRow } from '../inventory/types';
 import { parseLedger } from '../parser/LedgerParser';
 import { ParseWarning } from '../parser/types';
 
@@ -48,40 +47,108 @@ export type InventoryInput = {
 };
 
 export type IngestionInput = {
-  ledgers: LedgerInput[]; // 1..4 (one per empresa, no duplicates)
-  /** Optional — if omitted the CMV calculation is skipped for this batch. */
+  /** 0..4 ledgers (each empresa unique). At least one ledger or inventory must be present. */
+  ledgers: LedgerInput[];
+  /** Optional consolidated inventory file. */
   inventory?: InventoryInput;
   /**
-   * If true, delete any prior successful batch for the same period before
-   * ingesting. Useful for reprocessing the same month after rule changes.
+   * Required when no ledgers are uploaded (inventory-only). When ledgers are
+   * present, the parser-inferred period takes precedence; if `periodo` is
+   * also passed and disagrees, request is rejected.
+   */
+  periodo?: string;
+  /**
+   * If true, conflicting batches (same kind+empresa for the period) are
+   * deleted before write. Only conflicts in THIS request's scope are touched
+   * — other empresas in the period are untouched.
    */
   force?: boolean;
 };
 
-export type IngestionResult = {
-  batchId: string;
-  periodo: string;
-  status: IngestionBatch['status'];
-  stats: IngestionBatch['stats'];
-  files: IngestionFile[];
-  warnings: {
-    parser: ParseWarning[];
-    enrichment: EnrichmentWarning[];
-    inventory: InventoryParseWarning[];
-    cmv: { code: string; message: string }[];
+// ── Outcome types ────────────────────────────────────────────────────────────
+
+export type LedgerOutcome =
+  | {
+      kind: 'ledger';
+      empresa: Empresa;
+      status: 'success';
+      batchId: string;
+      rowsProcessed: number;
+      warnings: { parser: ParseWarning[]; enrichment: EnrichmentWarning[] };
+    }
+  | {
+      kind: 'ledger';
+      empresa: Empresa;
+      status: 'failed';
+      error: string;
+      warnings: { parser: ParseWarning[]; enrichment: EnrichmentWarning[] };
+    };
+
+export type InventoryOutcome =
+  | {
+      kind: 'inventory';
+      status: 'success';
+      batchId: string;
+      itemsProcessed: number;
+      warnings: { inventory: InventoryParseWarning[] };
+    }
+  | {
+      kind: 'inventory';
+      status: 'failed';
+      error: string;
+      warnings: { inventory: InventoryParseWarning[] };
+    };
+
+export type CMVRecomputeOutcome = {
+  inventoryBatchId: string;
+  totals: {
+    stockInicial: number;
+    compras: number;
+    stockFinal: number;
+    cmvBruto: number;
+    costoFinanciero: number;
+    cmvAjustado: number;
   };
+  pseudoMovementsInserted: number;
+  warnings: CMVWarning[];
 };
 
-/** Compute SHA-256 of a buffer. Used for file dedupe / idempotency. */
+export type ConflictItem = {
+  kind: 'ledger' | 'inventory';
+  empresa: Empresa | null;
+  existingBatchId: string;
+  existingCreatedAt: Date;
+  rowsProcessed: number;
+};
+
+export type ConflictError = Error & {
+  status: 409;
+  conflicts: ConflictItem[];
+  periodo: string;
+};
+
+export type IngestionResult = {
+  periodo: string;
+  ledgers: LedgerOutcome[];
+  inventory: InventoryOutcome | null;
+  cmv: CMVRecomputeOutcome | null;
+};
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 const sha256 = (buf: Buffer): string => createHash('sha256').update(buf).digest('hex');
 
-/**
- * Validate the input shape: empresas unique, at least one ledger, etc.
- * Throws Error with a status property the route handler turns into 4xx.
- */
+const httpError = (status: number, message: string): Error & { status: number } => {
+  const e = new Error(message) as Error & { status: number };
+  e.status = status;
+  return e;
+};
+
+const PERIODO_RE = /^\d{2}\/\d{4}$/;
+
 const validateInput = (input: IngestionInput): void => {
-  if (!input.ledgers || input.ledgers.length === 0) {
-    throw httpError(400, 'Debe enviarse al menos un mayor');
+  if (input.ledgers.length === 0 && !input.inventory) {
+    throw httpError(400, 'Debe enviarse al menos un mayor o un inventario');
   }
   const empresas = new Set<string>();
   for (const l of input.ledgers) {
@@ -90,47 +157,11 @@ const validateInput = (input: IngestionInput): void => {
     }
     empresas.add(l.empresa);
   }
+  if (input.periodo && !PERIODO_RE.test(input.periodo)) {
+    throw httpError(400, `Periodo inválido: ${input.periodo} (formato esperado MM/YYYY)`);
+  }
 };
 
-const httpError = (status: number, message: string): Error & { status: number } => {
-  const e = new Error(message) as Error & { status: number };
-  e.status = status;
-  return e;
-};
-
-/**
- * Convert a CMV pseudo-movement into a Movement document, filling in the
- * batch/empresa metadata and computing rubro/rubroReimputada from cuenta.
- */
-const pseudoMovToMovementDoc = (
-  pm: CMVPseudoMovement,
-  ctx: { empresa: Empresa; periodo: string; archivo: string; batchId: Types.ObjectId },
-): Omit<Movement, '_id' | 'createdAt' | 'updatedAt'> => ({
-  empresa: ctx.empresa,
-  periodo: ctx.periodo,
-  fechaISO: pm.fechaISO,
-  archivo: ctx.archivo,
-  ingestionBatchId: ctx.batchId,
-  sourceType: 'cmv-calc',
-  asiento: pm.asiento,
-  numeroCuenta: pm.numeroCuenta,
-  nombreCuenta: pm.nombreCuenta,
-  numeroSubcuenta: pm.numeroSubcuenta,
-  nombreSubcuenta: pm.nombreSubcuenta,
-  rubro: classifyRubro(pm.numeroCuenta),
-  detalle: pm.detalle,
-  debe: pm.debe,
-  haber: pm.haber,
-  numeroCuentaReimputada: pm.numeroCuentaReimputada,
-  nombreCuentaReimputada: pm.nombreCuentaReimputada,
-  rubroReimputada: classifyRubro(pm.numeroCuentaReimputada),
-  subrubro: pm.subrubro,
-  anulacion: pm.anulacion,
-});
-
-/**
- * Convert an enriched ledger movement into a Movement document.
- */
 const enrichedToMovementDoc = (
   m: EnrichedMovement,
   ctx: { empresa: Empresa; periodo: string; archivo: string; batchId: Types.ObjectId },
@@ -157,31 +188,159 @@ const enrichedToMovementDoc = (
   anulacion: m.anulacion,
 });
 
+const pseudoMovToMovementDoc = (
+  pm: CMVPseudoMovement,
+  ctx: { empresa: Empresa; periodo: string; archivo: string; batchId: Types.ObjectId },
+): Omit<Movement, '_id' | 'createdAt' | 'updatedAt'> => ({
+  empresa: ctx.empresa,
+  periodo: ctx.periodo,
+  fechaISO: pm.fechaISO,
+  archivo: ctx.archivo,
+  ingestionBatchId: ctx.batchId,
+  sourceType: 'cmv-calc',
+  asiento: pm.asiento,
+  numeroCuenta: pm.numeroCuenta,
+  nombreCuenta: pm.nombreCuenta,
+  numeroSubcuenta: pm.numeroSubcuenta,
+  nombreSubcuenta: pm.nombreSubcuenta,
+  rubro: classifyRubro(pm.numeroCuenta),
+  detalle: pm.detalle,
+  debe: pm.debe,
+  haber: pm.haber,
+  numeroCuentaReimputada: pm.numeroCuentaReimputada,
+  nombreCuentaReimputada: pm.nombreCuentaReimputada,
+  rubroReimputada: classifyRubro(pm.numeroCuentaReimputada),
+  subrubro: pm.subrubro,
+  anulacion: pm.anulacion,
+});
+
+// ── CMV recompute ────────────────────────────────────────────────────────────
+
 /**
- * Pure orchestrator that ingests one monthly batch.
+ * Recompute CMV for a period from the current DB state.
+ *
+ * - No-op when no successful inventory batch exists for the period.
+ * - Reads InventoryItem rows + all ledger movs (across batches) for the period.
+ * - Wipes prior pseudo-movements (sourceType='cmv-calc') for the period and
+ *   reinserts the freshly-calculated set, tagged to the inventory batch.
+ * - Updates the inventory batch's stats.
+ *
+ * Triggered after every successful ingest action (ledger upload, inventory
+ * upload, or replacement). Idempotent — safe to call multiple times.
+ */
+export const recomputeCMVForPeriod = async (
+  periodo: string,
+): Promise<CMVRecomputeOutcome | null> => {
+  const invBatch = await IngestionBatchModel.findOne({
+    periodo,
+    kind: 'inventory',
+    status: 'success',
+  }).lean<IngestionBatch | null>();
+  if (!invBatch) return null;
+
+  const [items, movs] = await Promise.all([
+    InventoryItemModel.find({ ingestionBatchId: invBatch._id }).lean(),
+    MovementModel.find({ periodo, sourceType: 'ledger' }).lean(),
+  ]);
+
+  // Reconstruct parsed rows from stored enriched items.
+  const parsedRows: InventoryParsedRow[] = items.map((it) => ({
+    categoria: it.categoria,
+    unidMesAnterior: it.unidMesAnterior,
+    precioMesAnterior: it.precioMesAnterior,
+    valorMesAnterior: it.valorMesAnterior,
+    unidMesEnCurso: it.unidMesEnCurso,
+    precioMesEnCurso: it.precioMesEnCurso,
+    valorMesEnCurso: it.valorMesEnCurso,
+    mermaPct: it.mermaPct ?? null,
+  }));
+
+  // The CMV calc only reads numeroCuenta, debe, haber from movements — the
+  // stored Movement docs already have all the fields it needs.
+  const enrichedMovs = movs as unknown as EnrichedMovement[];
+
+  const cmv = calculateCMV({
+    periodo,
+    inventoryItems: parsedRows,
+    movements: enrichedMovs,
+  });
+
+  await MovementModel.deleteMany({ periodo, sourceType: 'cmv-calc' });
+  if (cmv.pseudoMovements.length > 0) {
+    const docs = cmv.pseudoMovements.map((pm) =>
+      pseudoMovToMovementDoc(pm, {
+        empresa: CMV_EMPRESA,
+        periodo,
+        archivo: invBatch.file.name,
+        batchId: invBatch._id,
+      }),
+    );
+    await MovementModel.insertMany(docs, { ordered: false });
+  }
+
+  await IngestionBatchModel.updateOne(
+    { _id: invBatch._id },
+    {
+      $set: {
+        'stats.inventoryItems': items.length,
+        'stats.movementsInserted': cmv.pseudoMovements.length,
+        'stats.stockInicial': cmv.totals.stockInicial,
+        'stats.compras': cmv.totals.compras,
+        'stats.stockFinal': cmv.totals.stockFinal,
+        'stats.cmvBruto': cmv.totals.cmvBruto,
+        'stats.costoFinanciero': cmv.totals.costoFinanciero,
+        'stats.cmvAjustado': cmv.totals.cmvAjustado,
+      },
+    },
+  );
+
+  return {
+    inventoryBatchId: invBatch._id.toString(),
+    totals: cmv.totals,
+    pseudoMovementsInserted: cmv.pseudoMovements.length,
+    warnings: cmv.warnings,
+  };
+};
+
+// ── Per-(empresa, kind) ingestion ────────────────────────────────────────────
+
+type ParsedLedger = {
+  input: LedgerInput;
+  enriched: EnrichedMovement[];
+  parserWarnings: ParseWarning[];
+  enrichmentWarnings: EnrichmentWarning[];
+  /** null when the file has no movs (sentinel '00/0000') or parse blew up. */
+  periodo: string | null;
+  parseError?: string;
+};
+
+/**
+ * Pure orchestrator that ingests one upload (1+ ledgers + 0..1 inventory).
  *
  * Flow:
  *  1. Validate input shape.
- *  2. Load enrichment rules (once).
- *  3. Parse + enrich every ledger; aggregate parser/enrichment warnings.
- *  4. Verify all parsed periodos agree.
- *  5. Idempotency check: reject if a successful batch already exists for the
- *     period with the same inventory hash, unless `force=true`.
- *  6. Create IngestionBatch (status='processing').
- *  7. Parse inventory + run CMVCalculator.
- *  8. Bulk-insert all Movement docs (ledger + 4 CMV pseudo-movs).
- *  9. Bulk-insert all InventoryItem docs.
- * 10. Update batch with stats + status='success' (or 'failed' on error).
+ *  2. Load enrichment rules.
+ *  3. Parse + enrich each ledger in-memory; capture per-empresa errors
+ *     without aborting the rest.
+ *  4. Resolve periodo (parser-inferred wins; falls back to input.periodo
+ *     for inventory-only uploads).
+ *  5. DB conflict check: any of (periodo, kind='ledger', empresa) or
+ *     (periodo, kind='inventory') already at status='success'?
+ *     - If yes and !force: throw ConflictError (409).
+ *     - If yes and force: cascade-delete only the conflicting batches.
+ *  6. For each ledger: create batch (status='processing'), insert movs,
+ *     mark success. On error: mark batch failed, continue with the others.
+ *  7. If inventory provided: same flow.
+ *  8. Recompute CMV for the period (no-op if no inventory batch exists).
+ *  9. Return per-batch outcomes + CMV result.
  *
- * Not wrapped in a mongoose transaction to keep the code simple; if step 8
- * or 9 fails, the batch is marked 'failed' with the error and step 5
- * re-rejects on retry. A future cleanup endpoint can purge failed batches.
+ * Each ledger / inventory is an independent unit — a SUSTEN parse failure
+ * does not roll back a successful SUPERBOL upload.
  */
 export const ingest = async (input: IngestionInput): Promise<IngestionResult> => {
   validateInput(input);
 
-  // Load rules in parallel (same as loadEnrichmentPipeline but inline so we
-  // can pre-compute file hashes during the IO wait).
+  // 2. Load rules
   const [reimputationRules, anulacionRules, subrubroMaps] = await Promise.all([
     ReimputationRuleModel.find().lean<ReimputationRule[]>(),
     AnulacionRuleModel.find().lean<AnulacionRule[]>(),
@@ -191,244 +350,272 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
   const anulacionTagger = new AnulacionTagger(anulacionRules);
   const subrubroEnricher = new SubrubroEnricher(subrubroMaps);
 
-  // Parse + enrich ledgers (in-memory; the parsing is fast — sub-second per
-  // file at 30k rows — and we need everything before we can compute Compras).
-  const parserWarnings: ParseWarning[] = [];
-  const enrichmentWarnings: EnrichmentWarning[] = [];
-  const allEnriched: { ledgerInput: LedgerInput; enriched: EnrichedMovement[] }[] = [];
-
-  const periodos = new Set<string>();
-  for (const l of input.ledgers) {
-    const parsed = parseLedger(l.buffer, { empresa: l.empresa, archivo: l.archivo });
-    parserWarnings.push(...parsed.warnings);
-    // Skip the sentinel "00/0000" — that's what the parser emits when the
-    // file has no movimientos (legitimate for "empresas pantalla" like POINT).
-    if (parsed.periodo !== '00/0000') periodos.add(parsed.periodo);
-    const enriched = enrichMovements(parsed.movements, {
-      reimputator,
-      anulacionTagger,
-      subrubroEnricher,
-    });
-    enrichmentWarnings.push(...enriched.warnings);
-    allEnriched.push({ ledgerInput: l, enriched: enriched.movements });
-  }
-
-  if (periodos.size === 0) {
-    throw httpError(
-      400,
-      'Ningún mayor tiene movimientos — no se puede inferir el período',
-    );
-  }
-  if (periodos.size > 1) {
-    throw httpError(
-      400,
-      `Los mayores tienen períodos distintos: ${[...periodos].join(', ')}`,
-    );
-  }
-  const periodo = [...periodos][0];
-
-  // Idempotency: hash all files; reject if a successful batch matches.
-  const ledgerFiles: IngestionFile[] = input.ledgers.map((l, i) => ({
-    name: l.archivo,
-    hash: sha256(l.buffer),
-    kind: 'ledger',
-    empresa: l.empresa,
-    rowsProcessed: allEnriched[i].enriched.length,
-  }));
-  const inventoryFile: IngestionFile | null = input.inventory
-    ? {
-        name: input.inventory.archivo,
-        hash: sha256(input.inventory.buffer),
-        kind: 'inventory',
-        empresa: null,
-        rowsProcessed: 0, // updated after parse
-      }
-    : null;
-  const allFiles: IngestionFile[] = inventoryFile
-    ? [...ledgerFiles, inventoryFile]
-    : ledgerFiles;
-
-  const existing = await IngestionBatchModel.findOne({
-    periodo,
-    status: 'success',
-  }).lean<IngestionBatch | null>();
-  if (existing) {
-    if (!input.force) {
-      throw httpError(
-        409,
-        `Ya existe un batch exitoso para período ${periodo} (${existing._id}). ` +
-          `Usar force=true para reingestar.`,
-      );
+  // 3. Parse + enrich ledgers (in-memory)
+  const parsed: ParsedLedger[] = input.ledgers.map((l): ParsedLedger => {
+    try {
+      const r = parseLedger(l.buffer, { empresa: l.empresa, archivo: l.archivo });
+      const enriched = enrichMovements(r.movements, {
+        reimputator,
+        anulacionTagger,
+        subrubroEnricher,
+      });
+      return {
+        input: l,
+        enriched: enriched.movements,
+        parserWarnings: r.warnings,
+        enrichmentWarnings: enriched.warnings,
+        periodo: r.periodo === '00/0000' ? null : r.periodo,
+      };
+    } catch (err) {
+      return {
+        input: l,
+        enriched: [],
+        parserWarnings: [],
+        enrichmentWarnings: [],
+        periodo: null,
+        parseError: err instanceof Error ? err.message : String(err),
+      };
     }
-    // Force: cascade-delete previous batch's data
+  });
+
+  // 4. Resolve periodo
+  const distinctPeriodos = new Set(
+    parsed.filter((p) => p.periodo).map((p) => p.periodo as string),
+  );
+  if (distinctPeriodos.size > 1) {
+    throw httpError(
+      400,
+      `Los mayores tienen períodos distintos: ${[...distinctPeriodos].join(', ')}`,
+    );
+  }
+  const inferredPeriodo = [...distinctPeriodos][0];
+  if (inferredPeriodo && input.periodo && inferredPeriodo !== input.periodo) {
+    throw httpError(
+      400,
+      `Periodo inferido (${inferredPeriodo}) no coincide con el solicitado (${input.periodo})`,
+    );
+  }
+  const periodo = inferredPeriodo ?? input.periodo;
+  if (!periodo) {
+    throw httpError(
+      400,
+      'No se pudo inferir período: los mayores no tienen movimientos y no se proporcionó período',
+    );
+  }
+
+  // 5. Conflict check
+  const requestedEmpresas = parsed
+    .filter((p) => !p.parseError)
+    .map((p) => p.input.empresa);
+
+  const [existingLedgers, existingInv] = await Promise.all([
+    requestedEmpresas.length > 0
+      ? IngestionBatchModel.find({
+          periodo,
+          kind: 'ledger',
+          status: 'success',
+          empresa: { $in: requestedEmpresas },
+        }).lean<IngestionBatch[]>()
+      : Promise.resolve([]),
+    input.inventory
+      ? IngestionBatchModel.findOne({
+          periodo,
+          kind: 'inventory',
+          status: 'success',
+        }).lean<IngestionBatch | null>()
+      : Promise.resolve(null),
+  ]);
+
+  const conflicts: ConflictItem[] = [];
+  for (const e of existingLedgers) {
+    conflicts.push({
+      kind: 'ledger',
+      empresa: e.empresa,
+      existingBatchId: e._id.toString(),
+      existingCreatedAt: e.createdAt!,
+      rowsProcessed: e.file.rowsProcessed,
+    });
+  }
+  if (existingInv) {
+    conflicts.push({
+      kind: 'inventory',
+      empresa: null,
+      existingBatchId: existingInv._id.toString(),
+      existingCreatedAt: existingInv.createdAt!,
+      rowsProcessed: existingInv.file.rowsProcessed,
+    });
+  }
+
+  if (conflicts.length > 0 && !input.force) {
+    const labels = conflicts
+      .map((c) => (c.kind === 'inventory' ? 'inventario' : c.empresa))
+      .join(', ');
+    const err = httpError(
+      409,
+      `Ya existen datos para ${periodo}: ${labels}. Usar force=true para reemplazar.`,
+    ) as ConflictError;
+    err.conflicts = conflicts;
+    err.periodo = periodo;
+    throw err;
+  }
+
+  // Force path: cascade-delete only the conflicting batches.
+  if (input.force && conflicts.length > 0) {
+    const batchIds = conflicts.map((c) => new Types.ObjectId(c.existingBatchId));
     await Promise.all([
-      MovementModel.deleteMany({ ingestionBatchId: existing._id }),
-      InventoryItemModel.deleteMany({ ingestionBatchId: existing._id }),
-      IngestionBatchModel.deleteOne({ _id: existing._id }),
+      MovementModel.deleteMany({ ingestionBatchId: { $in: batchIds } }),
+      InventoryItemModel.deleteMany({ ingestionBatchId: { $in: batchIds } }),
+      IngestionBatchModel.deleteMany({ _id: { $in: batchIds } }),
     ]);
   }
 
-  // Create batch
-  const batch = await IngestionBatchModel.create({
-    periodo,
-    files: allFiles,
-    status: 'processing',
-    stats: {
-      movementsInserted: 0,
-      inventoryItems: 0,
-      stockInicial: 0,
-      compras: 0,
-      stockFinal: 0,
-      cmvBruto: 0,
-      costoFinanciero: 0,
-      cmvAjustado: 0,
-    },
-    errors: [],
-  });
-
-  try {
-    // Build ledger movement docs
-    const movementDocs: Omit<Movement, '_id' | 'createdAt' | 'updatedAt'>[] = [];
-    for (const { ledgerInput, enriched } of allEnriched) {
-      for (const m of enriched) {
-        movementDocs.push(
-          enrichedToMovementDoc(m, {
-            empresa: ledgerInput.empresa,
-            periodo,
-            archivo: ledgerInput.archivo,
-            batchId: batch._id,
-          }),
-        );
-      }
-    }
-
-    // CMV block — only when an inventory file was provided
-    let invWarnings: InventoryParseWarning[] = [];
-    let cmvWarnings: { code: string; message: string }[] = [];
-    let cmvStats = {
-      inventoryItems: 0,
-      stockInicial: 0,
-      compras: 0,
-      stockFinal: 0,
-      cmvBruto: 0,
-      costoFinanciero: 0,
-      cmvAjustado: 0,
-    };
-    let filesWithCounts: IngestionFile[] = allFiles;
-
-    if (input.inventory) {
-      const invParsed = parseInventory(input.inventory.buffer);
-      // Hard fail if the inventory parsed to nothing — without SI/SF we can't
-      // compute CMV. Better to abort than silently store CMV=Compras.
-      if (invParsed.rows.length === 0) {
-        const reasons = invParsed.warnings.map((w) => `[${w.code}] ${w.message}`).join('; ');
-        throw httpError(
-          400,
-          `El inventario no produjo ítems parseables. Revisar el archivo. ` +
-            (reasons ? `Causa: ${reasons}` : ''),
-        );
-      }
-      const flatEnriched = allEnriched.flatMap((x) => x.enriched);
-      const cmv = calculateCMV({
-        periodo,
-        inventoryItems: invParsed.rows,
-        movements: flatEnriched,
+  // 6. Per-ledger ingestion
+  const ledgerOutcomes: LedgerOutcome[] = [];
+  for (const p of parsed) {
+    if (p.parseError) {
+      ledgerOutcomes.push({
+        kind: 'ledger',
+        empresa: p.input.empresa,
+        status: 'failed',
+        error: p.parseError,
+        warnings: { parser: p.parserWarnings, enrichment: p.enrichmentWarnings },
       });
-
-      for (const pm of cmv.pseudoMovements) {
-        movementDocs.push(
-          pseudoMovToMovementDoc(pm, {
-            empresa: CMV_EMPRESA,
-            periodo,
-            archivo: input.inventory.archivo,
-            batchId: batch._id,
-          }),
-        );
-      }
-
-      const itemDocs = cmv.items.map((it) => ({
+      continue;
+    }
+    let batchId: Types.ObjectId | null = null;
+    try {
+      const batch = await IngestionBatchModel.create({
         periodo,
-        ingestionBatchId: batch._id,
-        categoria: it.categoria,
-        unidMesAnterior: it.unidMesAnterior,
-        precioMesAnterior: it.precioMesAnterior,
-        valorMesAnterior: it.valorMesAnterior,
-        unidMesEnCurso: it.unidMesEnCurso,
-        precioMesEnCurso: it.precioMesEnCurso,
-        valorMesEnCurso: it.valorMesEnCurso,
-        deltaPrecio: it.deltaPrecio,
-        casoCalculado: it.casoCalculado,
-        unidadesAfectadas: it.unidadesAfectadas,
-        costoFinanciero: it.costoFinanciero,
-        mermaPct: it.mermaPct,
-      }));
+        kind: 'ledger',
+        empresa: p.input.empresa,
+        file: {
+          name: p.input.archivo,
+          hash: sha256(p.input.buffer),
+          rowsProcessed: p.enriched.length,
+        },
+        status: 'processing',
+      });
+      batchId = batch._id;
 
-      await InventoryItemModel.insertMany(itemDocs, { ordered: false });
-
-      filesWithCounts = allFiles.map((f) =>
-        f.kind === 'inventory' ? { ...f, rowsProcessed: invParsed.stats.itemsParsed } : f,
+      const movDocs = p.enriched.map((m) =>
+        enrichedToMovementDoc(m, {
+          empresa: p.input.empresa,
+          periodo,
+          archivo: p.input.archivo,
+          batchId: batchId!,
+        }),
+      );
+      if (movDocs.length > 0) {
+        await MovementModel.insertMany(movDocs, { ordered: false });
+      }
+      await IngestionBatchModel.updateOne(
+        { _id: batchId },
+        { $set: { status: 'success', 'stats.movementsInserted': movDocs.length } },
       );
 
-      invWarnings = invParsed.warnings;
-      cmvWarnings = cmv.warnings;
-      cmvStats = {
-        inventoryItems: itemDocs.length,
-        stockInicial: cmv.totals.stockInicial,
-        compras: cmv.totals.compras,
-        stockFinal: cmv.totals.stockFinal,
-        cmvBruto: cmv.totals.cmvBruto,
-        costoFinanciero: cmv.totals.costoFinanciero,
-        cmvAjustado: cmv.totals.cmvAjustado,
+      ledgerOutcomes.push({
+        kind: 'ledger',
+        empresa: p.input.empresa,
+        status: 'success',
+        batchId: batchId.toString(),
+        rowsProcessed: movDocs.length,
+        warnings: { parser: p.parserWarnings, enrichment: p.enrichmentWarnings },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (batchId) {
+        await IngestionBatchModel.updateOne(
+          { _id: batchId },
+          { $set: { status: 'failed' }, $push: { errors: msg } },
+        );
+      }
+      ledgerOutcomes.push({
+        kind: 'ledger',
+        empresa: p.input.empresa,
+        status: 'failed',
+        error: msg,
+        warnings: { parser: p.parserWarnings, enrichment: p.enrichmentWarnings },
+      });
+    }
+  }
+
+  // 7. Inventory ingestion
+  let inventoryOutcome: InventoryOutcome | null = null;
+  if (input.inventory) {
+    let inventoryWarnings: InventoryParseWarning[] = [];
+    let batchId: Types.ObjectId | null = null;
+    try {
+      const invParsed = parseInventory(input.inventory.buffer);
+      inventoryWarnings = invParsed.warnings;
+      if (invParsed.rows.length === 0) {
+        const reasons = invParsed.warnings
+          .map((w) => `[${w.code}] ${w.message}`)
+          .join('; ');
+        throw new Error(
+          `El inventario no produjo ítems parseables. ${reasons || ''}`.trim(),
+        );
+      }
+      const batch = await IngestionBatchModel.create({
+        periodo,
+        kind: 'inventory',
+        empresa: null,
+        file: {
+          name: input.inventory.archivo,
+          hash: sha256(input.inventory.buffer),
+          rowsProcessed: invParsed.stats.itemsParsed,
+        },
+        status: 'processing',
+      });
+      batchId = batch._id;
+
+      const itemDocs = invParsed.rows.map((row) => {
+        const enriched = enrichInventoryItem(row);
+        return {
+          periodo,
+          ingestionBatchId: batchId!,
+          ...enriched,
+        };
+      });
+      await InventoryItemModel.insertMany(itemDocs, { ordered: false });
+
+      await IngestionBatchModel.updateOne(
+        { _id: batchId },
+        { $set: { status: 'success', 'stats.inventoryItems': itemDocs.length } },
+      );
+
+      inventoryOutcome = {
+        kind: 'inventory',
+        status: 'success',
+        batchId: batchId.toString(),
+        itemsProcessed: itemDocs.length,
+        warnings: { inventory: inventoryWarnings },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (batchId) {
+        await IngestionBatchModel.updateOne(
+          { _id: batchId },
+          { $set: { status: 'failed' }, $push: { errors: msg } },
+        );
+      }
+      inventoryOutcome = {
+        kind: 'inventory',
+        status: 'failed',
+        error: msg,
+        warnings: { inventory: inventoryWarnings },
       };
     }
-
-    // Bulk insert movements (ordered:false so one bad doc doesn't abort all)
-    await MovementModel.insertMany(movementDocs, { ordered: false });
-
-    // Final update: stats + success
-    await IngestionBatchModel.updateOne(
-      { _id: batch._id },
-      {
-        $set: {
-          status: 'success',
-          files: filesWithCounts,
-          stats: {
-            movementsInserted: movementDocs.length,
-            ...cmvStats,
-          },
-        },
-      },
-    );
-
-    return {
-      batchId: batch._id.toString(),
-      periodo,
-      status: 'success',
-      stats: {
-        movementsInserted: movementDocs.length,
-        ...cmvStats,
-      },
-      files: filesWithCounts,
-      warnings: {
-        parser: parserWarnings,
-        enrichment: enrichmentWarnings,
-        inventory: invWarnings,
-        cmv: cmvWarnings,
-      },
-    };
-  } catch (err) {
-    // Mark batch as failed but keep the row for diagnosis
-    const message = err instanceof Error ? err.message : String(err);
-    await IngestionBatchModel.updateOne(
-      { _id: batch._id },
-      { $set: { status: 'failed' }, $push: { errors: message } },
-    );
-    throw err;
   }
+
+  // 8. CMV recompute (no-op if no inventory batch exists for the period)
+  const cmv = await recomputeCMVForPeriod(periodo);
+
+  return {
+    periodo,
+    ledgers: ledgerOutcomes,
+    inventory: inventoryOutcome,
+    cmv,
+  };
 };
 
-// Re-export for tests / dry-runs
 export { sha256 };
-// Avoid unused-import lint by referencing mongoose explicitly (used for typing
-// elsewhere in this module's consumers).
-void mongoose;

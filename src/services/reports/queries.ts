@@ -237,20 +237,24 @@ const buildBalanceBucket = (rows: GroupedRow[], rubro: Rubro): BalanceBucket => 
  * stats — no need to recompute.
  */
 export const queryEvolucion = async (): Promise<EvolucionResponse> => {
-  // List periods that have a successful batch (most recent batch per period)
+  // Every successful batch (any kind) marks a period as "has data". CMV
+  // ajustado lives only on the inventory batch — a period with ledgers but
+  // no inventory has cmvAjustado=0.
   const batches = await IngestionBatchModel.find({ status: 'success' })
     .sort({ createdAt: -1 })
     .lean();
-  const seenPeriodos = new Set<string>();
-  const orderedPeriodos: { periodo: string; cmvAjustado: number }[] = [];
+  const cmvByPeriodo = new Map<string, number>();
+  const periodoSet = new Set<string>();
   for (const b of batches) {
-    if (seenPeriodos.has(b.periodo)) continue;
-    seenPeriodos.add(b.periodo);
-    orderedPeriodos.push({
-      periodo: b.periodo,
-      cmvAjustado: b.stats?.cmvAjustado ?? 0,
-    });
+    periodoSet.add(b.periodo);
+    if (b.kind === 'inventory') {
+      cmvByPeriodo.set(b.periodo, b.stats?.cmvAjustado ?? 0);
+    }
   }
+  const orderedPeriodos = [...periodoSet].map((periodo) => ({
+    periodo,
+    cmvAjustado: cmvByPeriodo.get(periodo) ?? 0,
+  }));
 
   // Sort ascending by periodo (MM/YYYY string sort works because we
   // pad both fields with leading zeros — but only by year+month order

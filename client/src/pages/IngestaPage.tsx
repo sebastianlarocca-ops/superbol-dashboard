@@ -10,6 +10,7 @@ import {
   Loader2,
   Trash2,
   RotateCcw,
+  XCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/axios';
@@ -29,28 +30,66 @@ type SniffResult = {
   error?: string;
 };
 
-type CheckResponse =
-  | { exists: false; periodo: string }
+type CheckResponse = {
+  periodo: string;
+  ledgers: {
+    empresa: Empresa;
+    batchId: string;
+    createdAt: string;
+    rowsProcessed: number;
+  }[];
+  inventory: {
+    batchId: string;
+    createdAt: string;
+    rowsProcessed: number;
+    stats: {
+      inventoryItems: number;
+      cmvAjustado: number;
+    };
+  } | null;
+};
+
+type LedgerOutcome =
   | {
-      exists: true;
-      periodo: string;
+      kind: 'ledger';
+      empresa: Empresa;
+      status: 'success';
       batchId: string;
-      createdAt: string;
-      files: { name: string; kind: 'ledger' | 'inventory'; empresa: Empresa | null; rowsProcessed: number }[];
-      stats: {
-        movementsInserted: number;
-        inventoryItems: number;
-        cmvAjustado: number;
+      rowsProcessed: number;
+      warnings: {
+        parser: { code: string; message: string; rowNumber?: number }[];
+        enrichment: { code: string; message: string; occurrences: number }[];
+      };
+    }
+  | {
+      kind: 'ledger';
+      empresa: Empresa;
+      status: 'failed';
+      error: string;
+      warnings: {
+        parser: { code: string; message: string; rowNumber?: number }[];
+        enrichment: { code: string; message: string; occurrences: number }[];
       };
     };
 
-type IngestaResult = {
-  batchId: string;
-  periodo: string;
-  status: 'success' | 'failed';
-  stats: {
-    movementsInserted: number;
-    inventoryItems: number;
+type InventoryOutcome =
+  | {
+      kind: 'inventory';
+      status: 'success';
+      batchId: string;
+      itemsProcessed: number;
+      warnings: { inventory: { code: string; message: string }[] };
+    }
+  | {
+      kind: 'inventory';
+      status: 'failed';
+      error: string;
+      warnings: { inventory: { code: string; message: string }[] };
+    };
+
+type CMVOutcome = {
+  inventoryBatchId: string;
+  totals: {
     stockInicial: number;
     compras: number;
     stockFinal: number;
@@ -58,13 +97,15 @@ type IngestaResult = {
     costoFinanciero: number;
     cmvAjustado: number;
   };
-  files: { name: string; kind: 'ledger' | 'inventory'; empresa: Empresa | null; rowsProcessed: number }[];
-  warnings: {
-    parser: { code: string; message: string; rowNumber?: number }[];
-    enrichment: { code: string; message: string; occurrences: number }[];
-    inventory: { code: string; message: string }[];
-    cmv: { code: string; message: string }[];
-  };
+  pseudoMovementsInserted: number;
+  warnings: { code: string; message: string }[];
+};
+
+type IngestaResult = {
+  periodo: string;
+  ledgers: LedgerOutcome[];
+  inventory: InventoryOutcome | null;
+  cmv: CMVOutcome | null;
 };
 
 // State machine stages
@@ -75,9 +116,7 @@ type Stage =
       type: 'confirm';
       droppedFiles: File[];
       sniffed: SniffResult[];
-      // User-editable per-file empresa (index → empresa)
       empresas: (Empresa | null)[];
-      // Detected period (user-editable)
       periodo: string;
     }
   | { type: 'done'; result: IngestaResult };
@@ -112,7 +151,6 @@ export function IngestaPage() {
       })).data.results;
     },
     onSuccess: (results, files) => {
-      // Auto-fill periodo from majority vote of detected periods
       const periodos = results
         .filter((r) => r.periodo !== null)
         .map((r) => r.periodo as string);
@@ -143,6 +181,7 @@ export function IngestaPage() {
     mutationFn: async ({ force }: { force: boolean }) => {
       if (stage.type !== 'confirm') throw new Error('Estado inválido');
       const fd = new FormData();
+      fd.append('periodo', stage.periodo);
       for (let i = 0; i < stage.droppedFiles.length; i++) {
         const sniff = stage.sniffed[i];
         const file = stage.droppedFiles[i];
@@ -152,7 +191,6 @@ export function IngestaPage() {
           const emp = stage.empresas[i];
           if (emp) fd.append(`ledger_${emp}`, file);
         }
-        // 'unknown' files are skipped
       }
       const url = force ? '/ingesta?force=true' : '/ingesta';
       return (await api.post<IngestaResult>(url, fd, {
@@ -164,10 +202,13 @@ export function IngestaPage() {
       setStage({ type: 'done', result: data });
       setErrorMessage(null);
       qc.invalidateQueries({ queryKey: ['ingesta-check'] });
+      qc.invalidateQueries({ queryKey: ['ingesta-batches'] });
       qc.invalidateQueries({ queryKey: ['periodos'] });
     },
     onError: (err: unknown) => {
-      const e = err as { response?: { status?: number; data?: { error?: string } } };
+      const e = err as {
+        response?: { status?: number; data?: { error?: string } };
+      };
       const msg = e.response?.data?.error ?? (err instanceof Error ? err.message : String(err));
       setErrorMessage(msg);
     },
@@ -182,8 +223,6 @@ export function IngestaPage() {
     enabled: stage.type === 'confirm' && PERIODO_RE.test(confirmPeriodo),
     staleTime: 5_000,
   });
-  const existingBatch =
-    checkQuery.data && checkQuery.data.exists ? checkQuery.data : null;
 
   // ── File drop handling ─────────────────────────────────────────────────
   const handleFiles = useCallback(
@@ -218,7 +257,6 @@ export function IngestaPage() {
         </p>
       </header>
 
-      {/* Error banner */}
       {errorMessage && (
         <div className="bg-red-50 border border-red-300 rounded-md p-4 mb-6 flex gap-2 text-red-800 text-sm">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
@@ -228,7 +266,6 @@ export function IngestaPage() {
         </div>
       )}
 
-      {/* ── Stage: idle or sniffing ────────────────────────────────────── */}
       {(stage.type === 'idle' || stage.type === 'sniffing') && (
         <div
           ref={dropRef}
@@ -277,11 +314,10 @@ export function IngestaPage() {
         </div>
       )}
 
-      {/* ── Stage: confirm ─────────────────────────────────────────────── */}
       {stage.type === 'confirm' && (
         <ConfirmStage
           stage={stage}
-          existingBatch={existingBatch}
+          existing={checkQuery.data ?? null}
           checkLoading={checkQuery.isLoading}
           ingesting={ingestaMutation.isPending}
           onPeriodoChange={(p) =>
@@ -297,10 +333,8 @@ export function IngestaPage() {
           }
           onSubmit={(force) => ingestaMutation.mutate({ force })}
           onReset={reset}
-          onAddMore={() => inputRef.current?.click()}
         />
       )}
-      {/* Hidden input for "add more" in confirm stage */}
       {stage.type === 'confirm' && (
         <input
           ref={inputRef}
@@ -312,7 +346,6 @@ export function IngestaPage() {
         />
       )}
 
-      {/* ── Stage: done ────────────────────────────────────────────────── */}
       {stage.type === 'done' && (
         <>
           <ResultPanel result={stage.result} />
@@ -325,7 +358,6 @@ export function IngestaPage() {
         </>
       )}
 
-      {/* ── Loaded periods list (always visible) ───────────────────────── */}
       {(stage.type === 'idle' || stage.type === 'done') && (
         <BatchList className="mt-8" />
       )}
@@ -335,11 +367,9 @@ export function IngestaPage() {
 
 // ── ConfirmStage ────────────────────────────────────────────────────────────
 
-type ExistingBatch = Extract<CheckResponse, { exists: true }>;
-
 function ConfirmStage({
   stage,
-  existingBatch,
+  existing,
   checkLoading,
   ingesting,
   onPeriodoChange,
@@ -348,26 +378,42 @@ function ConfirmStage({
   onReset,
 }: {
   stage: Extract<Stage, { type: 'confirm' }>;
-  existingBatch: ExistingBatch | null;
+  existing: CheckResponse | null;
   checkLoading: boolean;
   ingesting: boolean;
   onPeriodoChange: (p: string) => void;
   onEmpresaChange: (idx: number, e: Empresa | null) => void;
   onSubmit: (force: boolean) => void;
   onReset: () => void;
-  onAddMore: () => void;
 }) {
   const { sniffed, empresas, periodo } = stage;
   const periodoValid = PERIODO_RE.test(periodo);
 
-  // Validate: every ledger file must have an empresa assigned
+  // Per-empresa & inventory conflict detection
+  const requestedEmpresas = new Set<Empresa>();
+  for (let i = 0; i < sniffed.length; i++) {
+    if (sniffed[i].type === 'ledger' && empresas[i]) {
+      requestedEmpresas.add(empresas[i] as Empresa);
+    }
+  }
+  const requestedInventory = sniffed.some((s) => s.type === 'inventory');
+  const existingEmpresas = new Set(
+    (existing?.ledgers ?? []).map((l) => l.empresa),
+  );
+  const conflictEmpresas = [...requestedEmpresas].filter((e) =>
+    existingEmpresas.has(e),
+  );
+  const inventoryConflict = requestedInventory && !!existing?.inventory;
+  const hasConflict = conflictEmpresas.length > 0 || inventoryConflict;
+
+  // Validation
   const ledgersMissingEmpresa = sniffed.some(
     (s, i) => s.type === 'ledger' && !empresas[i],
   );
-  const hasLedger = sniffed.some((s) => s.type === 'ledger');
-  const canSubmit = periodoValid && hasLedger && !ledgersMissingEmpresa && !ingesting;
+  const hasLedgerOrInventory = sniffed.some(
+    (s) => s.type === 'ledger' || s.type === 'inventory',
+  );
 
-  // Detect empresa conflicts (two ledger files assigned same empresa)
   const empCounts: Partial<Record<Empresa, number>> = {};
   sniffed.forEach((s, i) => {
     if (s.type === 'ledger' && empresas[i]) {
@@ -377,13 +423,17 @@ function ConfirmStage({
   });
   const duplicateEmpresa = Object.values(empCounts).some((c) => (c ?? 0) > 1);
 
-  // Period mismatch: ledger files have different detected periods
   const detectedPeriods = new Set(
-    sniffed
-      .filter((s) => s.type === 'ledger' && s.periodo)
-      .map((s) => s.periodo),
+    sniffed.filter((s) => s.type === 'ledger' && s.periodo).map((s) => s.periodo),
   );
   const periodMismatch = detectedPeriods.size > 1;
+
+  const canSubmit =
+    periodoValid &&
+    hasLedgerOrInventory &&
+    !ledgersMissingEmpresa &&
+    !duplicateEmpresa &&
+    !ingesting;
 
   const typeLabel = (s: SniffResult) => {
     if (s.type === 'inventory') return 'Inventario';
@@ -399,7 +449,6 @@ function ConfirmStage({
 
   return (
     <div className="space-y-5">
-      {/* Period + file count header */}
       <div className="bg-white border border-slate-200 rounded-lg p-5">
         <div className="flex items-center gap-4 flex-wrap">
           <div>
@@ -429,7 +478,6 @@ function ConfirmStage({
         </div>
       </div>
 
-      {/* Files table */}
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
@@ -442,64 +490,78 @@ function ConfirmStage({
             </tr>
           </thead>
           <tbody>
-            {sniffed.map((s, i) => (
-              <tr key={i} className="border-t border-slate-100 hover:bg-slate-50/50">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <FileSpreadsheet size={15} className="text-slate-400 shrink-0" />
-                    <span className="text-slate-800 truncate max-w-xs" title={s.filename}>
-                      {s.filename}
-                    </span>
-                    {s.error && (
-                      <span className="text-xs text-red-600 ml-1" title={s.error}>
-                        ⚠ error
+            {sniffed.map((s, i) => {
+              const emp = empresas[i];
+              const conflicts =
+                (s.type === 'ledger' && emp && existingEmpresas.has(emp)) ||
+                (s.type === 'inventory' && !!existing?.inventory);
+              return (
+                <tr key={i} className="border-t border-slate-100 hover:bg-slate-50/50">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet size={15} className="text-slate-400 shrink-0" />
+                      <span className="text-slate-800 truncate max-w-xs" title={s.filename}>
+                        {s.filename}
                       </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', typeColor(s))}>
-                    {typeLabel(s)}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  {s.type === 'ledger' ? (
-                    <select
-                      value={empresas[i] ?? ''}
-                      onChange={(e) =>
-                        onEmpresaChange(i, (e.target.value as Empresa) || null)
-                      }
-                      className={clsx(
-                        'border rounded px-2 py-1 text-xs w-full bg-white focus:outline-none focus:border-brand-500',
-                        !empresas[i] ? 'border-red-300 bg-red-50' : 'border-slate-300',
+                      {s.error && (
+                        <span className="text-xs text-red-600 ml-1" title={s.error}>
+                          ⚠ error
+                        </span>
                       )}
-                    >
-                      <option value="">Seleccioná…</option>
-                      {EMPRESAS.map((e) => (
-                        <option key={e} value={e}>
-                          {e}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="text-slate-400 text-xs">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-xs text-slate-500 font-mono">
-                  {s.periodo
-                    ? fmtPeriodo(s.periodo)
-                    : <span className="text-slate-300">—</span>}
-                </td>
-                <td className="px-4 py-3 text-xs text-slate-400 text-right tabular-nums">
-                  {fmtBytes(s.size)}
-                </td>
-              </tr>
-            ))}
+                      {conflicts && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium"
+                          title="Ya hay datos para esta empresa/inventario en el período"
+                        >
+                          conflicto
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', typeColor(s))}>
+                      {typeLabel(s)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {s.type === 'ledger' ? (
+                      <select
+                        value={emp ?? ''}
+                        onChange={(e) =>
+                          onEmpresaChange(i, (e.target.value as Empresa) || null)
+                        }
+                        className={clsx(
+                          'border rounded px-2 py-1 text-xs w-full bg-white focus:outline-none focus:border-brand-500',
+                          !emp ? 'border-red-300 bg-red-50' : 'border-slate-300',
+                        )}
+                      >
+                        <option value="">Seleccioná…</option>
+                        {EMPRESAS.map((e) => (
+                          <option key={e} value={e}>
+                            {e}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-slate-400 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500 font-mono">
+                    {s.periodo
+                      ? fmtPeriodo(s.periodo)
+                      : <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-400 text-right tabular-nums">
+                    {fmtBytes(s.size)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      {/* Existing batch warning */}
+      {/* Existing-data summary + per-empresa conflict warning */}
       {periodoValid && (
         <div>
           {checkLoading && (
@@ -507,33 +569,47 @@ function ConfirmStage({
               <Loader2 size={12} className="animate-spin" /> Verificando período…
             </div>
           )}
-          {!checkLoading && !existingBatch && (
-            <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-              <CheckCircle2 size={15} /> Período libre — no hay datos cargados.
-            </div>
-          )}
-          {existingBatch && (
-            <div className="bg-amber-50 border border-amber-300 rounded-md px-4 py-3 text-sm">
-              <div className="flex items-start gap-2 text-amber-900 mb-2">
-                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          {!checkLoading && existing && (
+            (existing.ledgers.length === 0 && !existing.inventory) ? (
+              <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                <CheckCircle2 size={15} /> Período libre — no hay datos cargados.
+              </div>
+            ) : !hasConflict ? (
+              <div className="flex items-start gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+                <CheckCircle2 size={15} className="mt-0.5 text-emerald-600" />
                 <div>
-                  <strong>Ya hay datos para {fmtPeriodo(existingBatch.periodo)}</strong>
-                  <span className="text-xs text-amber-700 block mt-0.5">
-                    {existingBatch.stats.movementsInserted} movimientos ·
-                    CMV ajustado ${fmtMoney(existingBatch.stats.cmvAjustado)} ·
-                    Cargado {new Date(existingBatch.createdAt).toLocaleString('es-AR')}
-                  </span>
+                  Ya hay datos para {fmtPeriodo(existing.periodo)} (
+                  {[
+                    ...existing.ledgers.map((l) => l.empresa),
+                    ...(existing.inventory ? ['Inventario'] : []),
+                  ].join(', ')}
+                  ).
+                  <span className="text-slate-500"> Esta carga agrega sin tocar lo existente.</span>
                 </div>
               </div>
-              <p className="text-xs text-amber-800 ml-6">
-                Usá <strong>Reemplazar período</strong> para sobrescribir, o cambiá el período arriba.
-              </p>
-            </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-300 rounded-md px-4 py-3 text-sm">
+                <div className="flex items-start gap-2 text-amber-900 mb-1">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                  <div>
+                    <strong>
+                      Conflicto en {fmtPeriodo(existing.periodo)}:{' '}
+                      {[
+                        ...conflictEmpresas,
+                        ...(inventoryConflict ? ['inventario'] : []),
+                      ].join(', ')}
+                    </strong>
+                    <p className="text-xs text-amber-800 mt-1">
+                      Se va a reemplazar solo lo conflictivo. Las otras empresas del período no se tocan.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )
           )}
         </div>
       )}
 
-      {/* Validation issues */}
       {duplicateEmpresa && (
         <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
           <AlertCircle size={15} />
@@ -541,32 +617,37 @@ function ConfirmStage({
         </div>
       )}
 
-      {/* Action bar */}
       <div className="flex items-center gap-3 flex-wrap">
-        <button
-          type="button"
-          disabled={!canSubmit || !!duplicateEmpresa || !!existingBatch}
-          onClick={() => onSubmit(false)}
-          className={clsx(
-            'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
-            canSubmit && !duplicateEmpresa && !existingBatch
-              ? 'bg-brand-600 text-white hover:bg-brand-700'
-              : 'bg-slate-200 text-slate-400 cursor-not-allowed',
-          )}
-        >
-          {ingesting ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-          Procesar
-        </button>
-
-        {existingBatch && (
+        {!hasConflict && (
           <button
             type="button"
-            disabled={!canSubmit || !!duplicateEmpresa}
+            disabled={!canSubmit}
+            onClick={() => onSubmit(false)}
+            className={clsx(
+              'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
+              canSubmit
+                ? 'bg-brand-600 text-white hover:bg-brand-700'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed',
+            )}
+          >
+            {ingesting ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+            Procesar
+          </button>
+        )}
+
+        {hasConflict && (
+          <button
+            type="button"
+            disabled={!canSubmit}
             onClick={() => {
+              const labels = [
+                ...conflictEmpresas,
+                ...(inventoryConflict ? ['inventario'] : []),
+              ].join(', ');
               if (
                 window.confirm(
-                  `Esto borrará el batch existente para ${existingBatch.periodo} ` +
-                    `(${existingBatch.stats.movementsInserted} movs) y lo reemplazará. ¿Confirmás?`,
+                  `Esto va a reemplazar los datos de ${labels} en ${fmtPeriodo(periodo)}. ` +
+                    `Las otras empresas del período no se tocan. ¿Confirmás?`,
                 )
               ) {
                 onSubmit(true);
@@ -574,12 +655,13 @@ function ConfirmStage({
             }}
             className={clsx(
               'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
-              canSubmit && !duplicateEmpresa
+              canSubmit
                 ? 'bg-amber-600 text-white hover:bg-amber-700'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed',
             )}
           >
-            <Trash2 size={15} /> Reemplazar período
+            {ingesting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+            Reemplazar {conflictEmpresas.length + (inventoryConflict ? 1 : 0)} en conflicto
           </button>
         )}
 
@@ -599,66 +681,136 @@ function ConfirmStage({
 // ── ResultPanel ─────────────────────────────────────────────────────────────
 
 function ResultPanel({ result }: { result: IngestaResult }) {
-  const totalWarnings =
-    result.warnings.parser.length +
-    result.warnings.enrichment.length +
-    result.warnings.inventory.length +
-    result.warnings.cmv.length;
+  const ledgerSuccesses = result.ledgers.filter((l) => l.status === 'success');
+  const ledgerFailures = result.ledgers.filter((l) => l.status === 'failed');
+  const invStatus = result.inventory?.status;
+  const hasFailure = ledgerFailures.length > 0 || invStatus === 'failed';
+  const hasCMV = !!result.cmv;
 
-  const hasCMV = result.stats.inventoryItems > 0;
+  const totalWarnings =
+    result.ledgers.reduce(
+      (acc, l) => acc + l.warnings.parser.length + l.warnings.enrichment.length,
+      0,
+    ) +
+    (result.inventory?.warnings.inventory.length ?? 0) +
+    (result.cmv?.warnings.length ?? 0);
 
   return (
-    <section className="bg-white rounded-lg border border-emerald-200 p-6">
+    <section
+      className={clsx(
+        'bg-white rounded-lg border p-6',
+        hasFailure ? 'border-amber-300' : 'border-emerald-200',
+      )}
+    >
       <div className="flex items-start gap-3 mb-5">
-        <CheckCircle2 size={24} className="text-emerald-600 shrink-0 mt-0.5" />
+        {hasFailure ? (
+          <AlertTriangle size={24} className="text-amber-600 shrink-0 mt-0.5" />
+        ) : (
+          <CheckCircle2 size={24} className="text-emerald-600 shrink-0 mt-0.5" />
+        )}
         <div>
           <h3 className="text-base font-semibold text-slate-900">
-            Ingesta completada — {fmtPeriodo(result.periodo)}
+            {hasFailure ? 'Ingesta parcial' : 'Ingesta completada'} — {fmtPeriodo(result.periodo)}
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Batch <code className="font-mono">{result.batchId}</code>
+            {ledgerSuccesses.length} mayor{ledgerSuccesses.length !== 1 ? 'es' : ''} cargado
+            {ledgerSuccesses.length !== 1 ? 's' : ''}
+            {invStatus === 'success' && ' · inventario OK'}
+            {ledgerFailures.length > 0 && ` · ${ledgerFailures.length} fallaron`}
+            {invStatus === 'failed' && ' · inventario falló'}
           </p>
         </div>
       </div>
 
       <div className="mb-5">
         <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
-          Archivos procesados
+          Por archivo
         </h4>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-          {result.files.map((f) => (
-            <div key={f.name} className="flex justify-between text-slate-700">
-              <span className="truncate mr-2">
-                {f.kind === 'inventory' ? 'Inventario' : f.empresa}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+          {result.ledgers.map((l) => (
+            <div
+              key={l.empresa}
+              className="flex justify-between items-center text-slate-700 py-0.5"
+            >
+              <span className="flex items-center gap-1.5">
+                {l.status === 'success' ? (
+                  <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
+                ) : (
+                  <XCircle size={13} className="text-red-500 shrink-0" />
+                )}
+                {l.empresa}
               </span>
-              <span className="text-slate-500">{f.rowsProcessed} filas</span>
+              <span className="text-slate-500 text-xs">
+                {l.status === 'success'
+                  ? `${l.rowsProcessed} mov${l.rowsProcessed !== 1 ? 's' : ''}`
+                  : 'falló'}
+              </span>
             </div>
           ))}
+          {result.inventory && (
+            <div className="flex justify-between items-center text-slate-700 py-0.5">
+              <span className="flex items-center gap-1.5">
+                {result.inventory.status === 'success' ? (
+                  <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
+                ) : (
+                  <XCircle size={13} className="text-red-500 shrink-0" />
+                )}
+                Inventario
+              </span>
+              <span className="text-slate-500 text-xs">
+                {result.inventory.status === 'success'
+                  ? `${result.inventory.itemsProcessed} ítems`
+                  : 'falló'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {hasCMV && (
+      {ledgerFailures.length > 0 && (
+        <div className="mb-5">
+          <h4 className="text-xs font-medium text-red-700 uppercase tracking-wide mb-2">
+            Errores
+          </h4>
+          <ul className="text-xs text-red-700 space-y-1">
+            {ledgerFailures.map((l) => (
+              <li key={l.empresa}>
+                <strong>{l.empresa}:</strong>{' '}
+                {l.status === 'failed' ? l.error : ''}
+              </li>
+            ))}
+            {invStatus === 'failed' && result.inventory && (
+              <li>
+                <strong>Inventario:</strong>{' '}
+                {result.inventory.status === 'failed' ? result.inventory.error : ''}
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
+      {hasCMV && result.cmv && (
         <div className="mb-5">
           <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
             CMV (consolidado, imputado a SUPERBOL)
           </h4>
           <dl className="grid grid-cols-3 gap-3 text-sm">
-            <Stat label="Stock Inicial" value={result.stats.stockInicial} />
-            <Stat label="Compras" value={result.stats.compras} />
-            <Stat label="Stock Final" value={result.stats.stockFinal} />
-            <Stat label="CMV Bruto" value={result.stats.cmvBruto} />
+            <Stat label="Stock Inicial" value={result.cmv.totals.stockInicial} />
+            <Stat label="Compras" value={result.cmv.totals.compras} />
+            <Stat label="Stock Final" value={result.cmv.totals.stockFinal} />
+            <Stat label="CMV Bruto" value={result.cmv.totals.cmvBruto} />
             <Stat
               label="Costo Financiero"
-              value={result.stats.costoFinanciero}
-              hint={result.stats.costoFinanciero >= 0 ? 'ganancia' : 'pérdida'}
+              value={result.cmv.totals.costoFinanciero}
+              hint={result.cmv.totals.costoFinanciero >= 0 ? 'ganancia' : 'pérdida'}
             />
-            <Stat label="CMV Ajustado" value={result.stats.cmvAjustado} highlight />
+            <Stat label="CMV Ajustado" value={result.cmv.totals.cmvAjustado} highlight />
           </dl>
         </div>
       )}
       {!hasCMV && (
         <div className="mb-5 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded px-3 py-2">
-          No se incluyó archivo de inventario — CMV no calculado para este batch.
+          Sin inventario para el período — CMV no calculado.
         </div>
       )}
 
@@ -671,20 +823,30 @@ function ResultPanel({ result }: { result: IngestaResult }) {
             </h4>
           </div>
           <ul className="text-xs text-slate-600 space-y-1">
-            {result.warnings.parser.map((w, i) => (
-              <li key={`p-${i}`}><code className="text-slate-400">[parser/{w.code}]</code> {w.message}</li>
-            ))}
-            {result.warnings.enrichment.map((w, i) => (
-              <li key={`e-${i}`}>
-                <code className="text-slate-400">[enrich/{w.code}]</code> {w.message}
-                {w.occurrences > 1 && <span className="text-slate-400"> ×{w.occurrences}</span>}
+            {result.ledgers.flatMap((l) =>
+              l.warnings.parser.map((w, i) => (
+                <li key={`p-${l.empresa}-${i}`}>
+                  <code className="text-slate-400">[{l.empresa}/parser/{w.code}]</code> {w.message}
+                </li>
+              )),
+            )}
+            {result.ledgers.flatMap((l) =>
+              l.warnings.enrichment.map((w, i) => (
+                <li key={`e-${l.empresa}-${i}`}>
+                  <code className="text-slate-400">[{l.empresa}/enrich/{w.code}]</code> {w.message}
+                  {w.occurrences > 1 && <span className="text-slate-400"> ×{w.occurrences}</span>}
+                </li>
+              )),
+            )}
+            {result.inventory?.warnings.inventory.map((w, i) => (
+              <li key={`i-${i}`}>
+                <code className="text-slate-400">[inv/{w.code}]</code> {w.message}
               </li>
             ))}
-            {result.warnings.inventory.map((w, i) => (
-              <li key={`i-${i}`}><code className="text-slate-400">[inv/{w.code}]</code> {w.message}</li>
-            ))}
-            {result.warnings.cmv.map((w, i) => (
-              <li key={`c-${i}`}><code className="text-slate-400">[cmv/{w.code}]</code> {w.message}</li>
+            {result.cmv?.warnings.map((w, i) => (
+              <li key={`c-${i}`}>
+                <code className="text-slate-400">[cmv/{w.code}]</code> {w.message}
+              </li>
             ))}
           </ul>
         </div>
@@ -711,34 +873,35 @@ function Stat({
 
 // ── BatchList ────────────────────────────────────────────────────────────────
 
-type BatchFile = {
-  name: string;
-  kind: 'ledger' | 'inventory';
-  empresa: Empresa | null;
-  rowsProcessed: number;
-};
-
-type Batch = {
-  _id: string;
+type PeriodoGroup = {
   periodo: string;
-  status: string;
-  createdAt: string;
-  files: BatchFile[];
-  stats: { movementsInserted: number };
+  ledgers: {
+    empresa: Empresa;
+    batchId: string;
+    createdAt: string;
+    rowsProcessed: number;
+  }[];
+  inventory: {
+    batchId: string;
+    createdAt: string;
+    rowsProcessed: number;
+  } | null;
+  totalMovements: number;
+  cmvAjustado: number;
+  lastUpdated: string;
 };
 
 function BatchList({ className }: { className?: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['ingesta-batches'],
     queryFn: async () =>
-      (await api.get<{ count: number; batches: Batch[] }>('/ingesta')).data,
+      (await api.get<{ count: number; periodos: PeriodoGroup[] }>('/ingesta')).data,
     staleTime: 10_000,
   });
 
-  const successful = (data?.batches ?? []).filter((b) => b.status === 'success');
-
   if (isLoading) return null;
-  if (!successful.length) return null;
+  const periodos = data?.periodos ?? [];
+  if (!periodos.length) return null;
 
   return (
     <div className={className}>
@@ -753,37 +916,33 @@ function BatchList({ className }: { className?: string }) {
             </tr>
           </thead>
           <tbody>
-            {successful.map((b) => {
-              const ledgers = b.files.filter((f) => f.kind === 'ledger');
-              const hasInv = b.files.some((f) => f.kind === 'inventory');
-              return (
-                <tr key={b._id} className="border-t border-slate-100 hover:bg-slate-50/50">
-                  <td className="px-4 py-2.5 font-medium text-slate-800 whitespace-nowrap">
-                    {fmtPeriodo(b.periodo)}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1.5">
-                      {ledgers.map((f) => (
-                        <span
-                          key={f.name}
-                          className="px-2 py-0.5 bg-brand-50 text-brand-700 border border-brand-100 rounded text-[10px] font-medium"
-                        >
-                          {f.empresa ?? f.name}
-                        </span>
-                      ))}
-                      {hasInv && (
-                        <span className="px-2 py-0.5 bg-violet-50 text-violet-700 border border-violet-100 rounded text-[10px] font-medium">
-                          Inventario
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
-                    {b.stats.movementsInserted.toLocaleString('es-AR')}
-                  </td>
-                </tr>
-              );
-            })}
+            {periodos.map((g) => (
+              <tr key={g.periodo} className="border-t border-slate-100 hover:bg-slate-50/50">
+                <td className="px-4 py-2.5 font-medium text-slate-800 whitespace-nowrap">
+                  {fmtPeriodo(g.periodo)}
+                </td>
+                <td className="px-4 py-2.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    {g.ledgers.map((l) => (
+                      <span
+                        key={l.empresa}
+                        className="px-2 py-0.5 bg-brand-50 text-brand-700 border border-brand-100 rounded text-[10px] font-medium"
+                      >
+                        {l.empresa}
+                      </span>
+                    ))}
+                    {g.inventory && (
+                      <span className="px-2 py-0.5 bg-violet-50 text-violet-700 border border-violet-100 rounded text-[10px] font-medium">
+                        Inventario
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
+                  {g.totalMovements.toLocaleString('es-AR')}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

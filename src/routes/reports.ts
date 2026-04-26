@@ -117,20 +117,29 @@ router.get('/periodos', async (_req: Request, res: Response, next: NextFunction)
   try {
     const batches = await IngestionBatchModel.find({ status: 'success' })
       .sort({ createdAt: -1 })
-      .select('periodo createdAt stats')
+      .select('periodo createdAt stats kind')
       .lean();
-    // Dedupe by periodo (most recent batch wins) but preserve order.
-    const seen = new Set<string>();
-    const periodos: { periodo: string; createdAt: string; movs: number }[] = [];
+    // Aggregate per periodo: sum movs across all batches (ledger + inventory
+    // pseudo-movs), keep latest createdAt.
+    const byPeriodo = new Map<string, { createdAt: Date; movs: number }>();
     for (const b of batches) {
-      if (seen.has(b.periodo)) continue;
-      seen.add(b.periodo);
-      periodos.push({
-        periodo: b.periodo,
-        createdAt: (b.createdAt as Date).toISOString(),
-        movs: b.stats?.movementsInserted ?? 0,
-      });
+      const cur = byPeriodo.get(b.periodo);
+      const ts = b.createdAt as Date;
+      const movs = b.stats?.movementsInserted ?? 0;
+      if (!cur) {
+        byPeriodo.set(b.periodo, { createdAt: ts, movs });
+      } else {
+        cur.movs += movs;
+        if (ts > cur.createdAt) cur.createdAt = ts;
+      }
     }
+    const periodos = [...byPeriodo.entries()]
+      .map(([periodo, v]) => ({
+        periodo,
+        createdAt: v.createdAt.toISOString(),
+        movs: v.movs,
+      }))
+      .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
     res.json({ count: periodos.length, periodos });
   } catch (err) {
     next(err);
@@ -195,13 +204,19 @@ router.get('/cmv', async (req: Request, res: Response, next: NextFunction) => {
     const periodo = parsePeriodo(req, res);
     if (!periodo) return;
 
-    // Stats live on the IngestionBatch (computed at ingest-time, no aggregation
-    // needed). Items live on InventoryItem.
-    const batch = await IngestionBatchModel.findOne({ periodo, status: 'success' })
+    // CMV stats live on the inventory batch (recomputed on every change to
+    // the period). Items live on InventoryItem.
+    const batch = await IngestionBatchModel.findOne({
+      periodo,
+      kind: 'inventory',
+      status: 'success',
+    })
       .sort({ createdAt: -1 })
       .lean();
     if (!batch) {
-      res.status(404).json({ error: `No hay batch exitoso para período ${periodo}` });
+      res.status(404).json({
+        error: `No hay inventario cargado para período ${periodo}`,
+      });
       return;
     }
     const items = await InventoryItemModel.find({ ingestionBatchId: batch._id })
