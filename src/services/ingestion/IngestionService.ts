@@ -49,7 +49,8 @@ export type InventoryInput = {
 
 export type IngestionInput = {
   ledgers: LedgerInput[]; // 1..4 (one per empresa, no duplicates)
-  inventory: InventoryInput;
+  /** Optional — if omitted the CMV calculation is skipped for this batch. */
+  inventory?: InventoryInput;
   /**
    * If true, delete any prior successful batch for the same period before
    * ingesting. Useful for reprocessing the same month after rule changes.
@@ -79,9 +80,6 @@ const sha256 = (buf: Buffer): string => createHash('sha256').update(buf).digest(
  * Throws Error with a status property the route handler turns into 4xx.
  */
 const validateInput = (input: IngestionInput): void => {
-  if (!input.inventory) {
-    throw httpError(400, 'Falta el archivo de inventario');
-  }
   if (!input.ledgers || input.ledgers.length === 0) {
     throw httpError(400, 'Debe enviarse al menos un mayor');
   }
@@ -237,14 +235,18 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
     empresa: l.empresa,
     rowsProcessed: allEnriched[i].enriched.length,
   }));
-  const inventoryFile: IngestionFile = {
-    name: input.inventory.archivo,
-    hash: sha256(input.inventory.buffer),
-    kind: 'inventory',
-    empresa: null,
-    rowsProcessed: 0, // updated after parse
-  };
-  const allFiles: IngestionFile[] = [...ledgerFiles, inventoryFile];
+  const inventoryFile: IngestionFile | null = input.inventory
+    ? {
+        name: input.inventory.archivo,
+        hash: sha256(input.inventory.buffer),
+        kind: 'inventory',
+        empresa: null,
+        rowsProcessed: 0, // updated after parse
+      }
+    : null;
+  const allFiles: IngestionFile[] = inventoryFile
+    ? [...ledgerFiles, inventoryFile]
+    : ledgerFiles;
 
   const existing = await IngestionBatchModel.findOne({
     periodo,
@@ -285,30 +287,7 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
   });
 
   try {
-    // Parse inventory + CMV
-    const invParsed = parseInventory(input.inventory.buffer);
-    // Hard fail if the inventory parsed to nothing: that means the parser
-    // didn't recognize the sheet structure (header missing, wrong tab name,
-    // etc.). Without inventory we can't compute SI/SF/cf, so the batch's
-    // CMV would be just "compras" — wrong answer that looks right. Better
-    // to abort and let the user fix the file than silently corrupt the
-    // period's numbers.
-    if (invParsed.rows.length === 0) {
-      const reasons = invParsed.warnings.map((w) => `[${w.code}] ${w.message}`).join('; ');
-      throw httpError(
-        400,
-        `El inventario no produjo ítems parseables. Revisar el archivo. ` +
-          (reasons ? `Causa: ${reasons}` : ''),
-      );
-    }
-    const flatEnriched = allEnriched.flatMap((x) => x.enriched);
-    const cmv = calculateCMV({
-      periodo,
-      inventoryItems: invParsed.rows,
-      movements: flatEnriched,
-    });
-
-    // Build all Movement docs
+    // Build ledger movement docs
     const movementDocs: Omit<Movement, '_id' | 'createdAt' | 'updatedAt'>[] = [];
     for (const { ledgerInput, enriched } of allEnriched) {
       for (const m of enriched) {
@@ -322,45 +301,89 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
         );
       }
     }
-    for (const pm of cmv.pseudoMovements) {
-      movementDocs.push(
-        pseudoMovToMovementDoc(pm, {
-          empresa: CMV_EMPRESA,
-          periodo,
-          archivo: input.inventory.archivo,
-          batchId: batch._id,
-        }),
+
+    // CMV block — only when an inventory file was provided
+    let invWarnings: InventoryParseWarning[] = [];
+    let cmvWarnings: { code: string; message: string }[] = [];
+    let cmvStats = {
+      inventoryItems: 0,
+      stockInicial: 0,
+      compras: 0,
+      stockFinal: 0,
+      cmvBruto: 0,
+      costoFinanciero: 0,
+      cmvAjustado: 0,
+    };
+    let filesWithCounts: IngestionFile[] = allFiles;
+
+    if (input.inventory) {
+      const invParsed = parseInventory(input.inventory.buffer);
+      // Hard fail if the inventory parsed to nothing — without SI/SF we can't
+      // compute CMV. Better to abort than silently store CMV=Compras.
+      if (invParsed.rows.length === 0) {
+        const reasons = invParsed.warnings.map((w) => `[${w.code}] ${w.message}`).join('; ');
+        throw httpError(
+          400,
+          `El inventario no produjo ítems parseables. Revisar el archivo. ` +
+            (reasons ? `Causa: ${reasons}` : ''),
+        );
+      }
+      const flatEnriched = allEnriched.flatMap((x) => x.enriched);
+      const cmv = calculateCMV({
+        periodo,
+        inventoryItems: invParsed.rows,
+        movements: flatEnriched,
+      });
+
+      for (const pm of cmv.pseudoMovements) {
+        movementDocs.push(
+          pseudoMovToMovementDoc(pm, {
+            empresa: CMV_EMPRESA,
+            periodo,
+            archivo: input.inventory.archivo,
+            batchId: batch._id,
+          }),
+        );
+      }
+
+      const itemDocs = cmv.items.map((it) => ({
+        periodo,
+        ingestionBatchId: batch._id,
+        categoria: it.categoria,
+        unidMesAnterior: it.unidMesAnterior,
+        precioMesAnterior: it.precioMesAnterior,
+        valorMesAnterior: it.valorMesAnterior,
+        unidMesEnCurso: it.unidMesEnCurso,
+        precioMesEnCurso: it.precioMesEnCurso,
+        valorMesEnCurso: it.valorMesEnCurso,
+        deltaPrecio: it.deltaPrecio,
+        casoCalculado: it.casoCalculado,
+        unidadesAfectadas: it.unidadesAfectadas,
+        costoFinanciero: it.costoFinanciero,
+        mermaPct: it.mermaPct,
+      }));
+
+      await InventoryItemModel.insertMany(itemDocs, { ordered: false });
+
+      filesWithCounts = allFiles.map((f) =>
+        f.kind === 'inventory' ? { ...f, rowsProcessed: invParsed.stats.itemsParsed } : f,
       );
+
+      invWarnings = invParsed.warnings;
+      cmvWarnings = cmv.warnings;
+      cmvStats = {
+        inventoryItems: itemDocs.length,
+        stockInicial: cmv.totals.stockInicial,
+        compras: cmv.totals.compras,
+        stockFinal: cmv.totals.stockFinal,
+        cmvBruto: cmv.totals.cmvBruto,
+        costoFinanciero: cmv.totals.costoFinanciero,
+        cmvAjustado: cmv.totals.cmvAjustado,
+      };
     }
 
-    // Build InventoryItem docs
-    const itemDocs = cmv.items.map((it) => ({
-      periodo,
-      ingestionBatchId: batch._id,
-      categoria: it.categoria,
-      unidMesAnterior: it.unidMesAnterior,
-      precioMesAnterior: it.precioMesAnterior,
-      valorMesAnterior: it.valorMesAnterior,
-      unidMesEnCurso: it.unidMesEnCurso,
-      precioMesEnCurso: it.precioMesEnCurso,
-      valorMesEnCurso: it.valorMesEnCurso,
-      deltaPrecio: it.deltaPrecio,
-      casoCalculado: it.casoCalculado,
-      unidadesAfectadas: it.unidadesAfectadas,
-      costoFinanciero: it.costoFinanciero,
-      mermaPct: it.mermaPct,
-    }));
-
-    // Bulk insert (ordered:false for movements so a single bad doc doesn't
-    // abort the whole batch — we'd rather partial-success and surface in
-    // warnings than rollback 4k movements over one validation issue).
+    // Bulk insert movements (ordered:false so one bad doc doesn't abort all)
     await MovementModel.insertMany(movementDocs, { ordered: false });
-    await InventoryItemModel.insertMany(itemDocs, { ordered: false });
-
-    // Update inventory file rowsProcessed with the actual parsed count
-    const filesWithCounts = allFiles.map((f) =>
-      f.kind === 'inventory' ? { ...f, rowsProcessed: invParsed.stats.itemsParsed } : f,
-    );
 
     // Final update: stats + success
     await IngestionBatchModel.updateOne(
@@ -371,13 +394,7 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
           files: filesWithCounts,
           stats: {
             movementsInserted: movementDocs.length,
-            inventoryItems: itemDocs.length,
-            stockInicial: cmv.totals.stockInicial,
-            compras: cmv.totals.compras,
-            stockFinal: cmv.totals.stockFinal,
-            cmvBruto: cmv.totals.cmvBruto,
-            costoFinanciero: cmv.totals.costoFinanciero,
-            cmvAjustado: cmv.totals.cmvAjustado,
+            ...cmvStats,
           },
         },
       },
@@ -389,20 +406,14 @@ export const ingest = async (input: IngestionInput): Promise<IngestionResult> =>
       status: 'success',
       stats: {
         movementsInserted: movementDocs.length,
-        inventoryItems: itemDocs.length,
-        stockInicial: cmv.totals.stockInicial,
-        compras: cmv.totals.compras,
-        stockFinal: cmv.totals.stockFinal,
-        cmvBruto: cmv.totals.cmvBruto,
-        costoFinanciero: cmv.totals.costoFinanciero,
-        cmvAjustado: cmv.totals.cmvAjustado,
+        ...cmvStats,
       },
       files: filesWithCounts,
       warnings: {
         parser: parserWarnings,
         enrichment: enrichmentWarnings,
-        inventory: invParsed.warnings,
-        cmv: cmv.warnings,
+        inventory: invWarnings,
+        cmv: cmvWarnings,
       },
     };
   } catch (err) {

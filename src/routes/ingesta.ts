@@ -1,9 +1,84 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
+import * as XLSX from 'xlsx';
 
 import { IngestionBatchModel } from '../models';
 import { LedgerInput, ingest } from '../services/ingestion/IngestionService';
 import { EMPRESAS, Empresa } from '../types/empresa';
+
+// ── File sniff utility ───────────────────────────────────────────────────────
+
+type SniffResult = {
+  filename: string;
+  type: 'inventory' | 'ledger' | 'unknown';
+  empresa: Empresa | null;
+  periodo: string | null;
+  size: number;
+  error?: string;
+};
+
+/**
+ * Lightweight probe of an Excel buffer to detect file type, empresa, and period
+ * without running the full parser. Used by the /sniff endpoint so the UI can
+ * show a confirmation table before the actual ingesta.
+ *
+ * Detection logic:
+ *   - Has an "INFORME" sheet → inventory (no empresa/periodo)
+ *   - Otherwise → ledger; scan first 20 rows for an EMPRESAS name; scan rows
+ *     15+ for the first valid Date cell to infer periodo.
+ */
+function sniffFile(buffer: Buffer, filename: string, size: number): SniffResult {
+  try {
+    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+
+    if (wb.SheetNames.some((s) => s.trim().toUpperCase() === 'INFORME')) {
+      return { filename, type: 'inventory', empresa: null, periodo: null, size };
+    }
+
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) return { filename, type: 'unknown', empresa: null, periodo: null, size };
+
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      raw: true,
+      defval: null,
+    });
+
+    // Empresa: scan first 20 rows for a cell containing one of the known names
+    let empresa: Empresa | null = null;
+    for (let i = 0; i < Math.min(20, rows.length) && !empresa; i++) {
+      for (const cell of rows[i]) {
+        if (typeof cell !== 'string') continue;
+        const upper = cell.toUpperCase();
+        for (const e of EMPRESAS) {
+          if (upper.includes(e)) { empresa = e; break; }
+        }
+        if (empresa) break;
+      }
+    }
+
+    // Periodo: first plausible Date cell from row 15 onwards
+    let periodo: string | null = null;
+    for (let i = 15; i < rows.length && !periodo; i++) {
+      for (const cell of rows[i]) {
+        if (cell instanceof Date && !isNaN(cell.getTime())) {
+          const yyyy = cell.getUTCFullYear();
+          if (yyyy >= 2020 && yyyy <= 2040) {
+            periodo = `${String(cell.getUTCMonth() + 1).padStart(2, '0')}/${yyyy}`;
+            break;
+          }
+        }
+      }
+    }
+
+    return { filename, type: 'ledger', empresa, periodo, size };
+  } catch (err) {
+    return {
+      filename, type: 'unknown', empresa: null, periodo: null, size,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
 
 /**
  * Endpoints for monthly batch ingestion.
@@ -32,18 +107,38 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50 MB hard cap per file
-    files: 5,
+    fileSize: 50 * 1024 * 1024,
+    files: 10, // raised from 5 — sniff can receive up to 10 files at once
   },
 });
 
-const ledgerFields = EMPRESAS.map((e) => ({
-  name: `ledger_${e}` as const,
-  maxCount: 1,
-}));
-
+const ledgerFields = EMPRESAS.map((e) => ({ name: `ledger_${e}` as const, maxCount: 1 }));
 const uploadFields = upload.fields([{ name: 'inventory', maxCount: 1 }, ...ledgerFields]);
 
+// ── POST /sniff ──────────────────────────────────────────────────────────────
+// Accepts up to 10 files under the "files" field, sniffs each one, and returns
+// detected metadata (type, empresa, periodo). Does NOT write to the DB.
+router.post(
+  '/sniff',
+  upload.array('files', 10),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const files = (req.files ?? []) as Express.Multer.File[];
+      if (!files.length) {
+        res.status(400).json({ error: 'No se recibieron archivos' });
+        return;
+      }
+      const results: SniffResult[] = files.map((f) =>
+        sniffFile(f.buffer, f.originalname, f.size),
+      );
+      res.json({ results });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST / (main ingesta) ────────────────────────────────────────────────────
 router.post(
   '/',
   uploadFields,
@@ -52,26 +147,17 @@ router.post(
       const files = (req.files ?? {}) as Record<string, Express.Multer.File[]>;
 
       const inventoryFile = files['inventory']?.[0];
-      if (!inventoryFile) {
-        res.status(400).json({ error: 'Falta el archivo "inventory" en el form-data' });
-        return;
-      }
 
       const ledgers: LedgerInput[] = [];
       for (const empresa of EMPRESAS) {
         const f = files[`ledger_${empresa}`]?.[0];
         if (f) {
-          ledgers.push({
-            empresa: empresa as Empresa,
-            archivo: f.originalname,
-            buffer: f.buffer,
-          });
+          ledgers.push({ empresa: empresa as Empresa, archivo: f.originalname, buffer: f.buffer });
         }
       }
       if (ledgers.length === 0) {
         res.status(400).json({
-          error:
-            'Al menos un mayor es requerido. Campos válidos: ' +
+          error: 'Al menos un mayor es requerido. Campos válidos: ' +
             EMPRESAS.map((e) => `ledger_${e}`).join(', '),
         });
         return;
@@ -81,7 +167,9 @@ router.post(
 
       const result = await ingest({
         ledgers,
-        inventory: { archivo: inventoryFile.originalname, buffer: inventoryFile.buffer },
+        inventory: inventoryFile
+          ? { archivo: inventoryFile.originalname, buffer: inventoryFile.buffer }
+          : undefined,
         force,
       });
 
