@@ -1,13 +1,451 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
-  height: 100%;
+/* ============================================================
+   SUPERBOL — Premium Financial Analytics
+   Design tokens + dark-theme remap of Tailwind utilities
+   ============================================================ */
+
+:root {
+  /* Surfaces — cool near-black with subtle blue cast */
+  --bg-canvas:      oklch(0.145 0.012 255);
+  --bg-surface:     oklch(0.185 0.012 255);
+  --bg-surface-2:   oklch(0.215 0.012 255);
+  --bg-elevated:    oklch(0.235 0.014 255);
+  --bg-hover:       oklch(0.255 0.014 255);
+
+  /* Text */
+  --fg-primary:     oklch(0.97 0.005 255);
+  --fg-secondary:   oklch(0.78 0.008 255);
+  --fg-tertiary:    oklch(0.58 0.010 255);
+  --fg-quaternary:  oklch(0.42 0.010 255);
+
+  /* Borders — hairline */
+  --border:         oklch(0.30 0.012 255 / 0.6);
+  --border-strong:  oklch(0.40 0.012 255 / 0.8);
+  --border-subtle:  oklch(0.30 0.012 255 / 0.3);
+
+  /* Semantic */
+  --gain:           oklch(0.78 0.18 152);
+  --gain-bg:        oklch(0.78 0.18 152 / 0.10);
+  --gain-border:    oklch(0.78 0.18 152 / 0.30);
+  --loss:           oklch(0.70 0.21 25);
+  --loss-bg:        oklch(0.70 0.21 25 / 0.10);
+  --loss-border:    oklch(0.70 0.21 25 / 0.30);
+  --neutral:        oklch(0.72 0.16 260);
+  --neutral-bg:     oklch(0.72 0.16 260 / 0.10);
+  --warn:           oklch(0.82 0.16 85);
+  --warn-bg:        oklch(0.82 0.16 85 / 0.10);
+  --warn-border:    oklch(0.82 0.16 85 / 0.30);
+
+  /* Typography */
+  --font-display: 'Inter Tight', -apple-system, sans-serif;
+  --font-ui:      'Inter', -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+  /* Spacing scale */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 64px;
+
+  /* Radius */
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-lg: 0 1px 0 oklch(1 0 0 / 0.05) inset, 0 12px 32px -8px oklch(0 0 0 / 0.5);
 }
 
+html, body, #root { height: 100%; }
+
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  background-color: #f8fafc;
-  color: #0f172a;
+  margin: 0;
+  background: var(--bg-canvas);
+  color: var(--fg-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv11', 'ss01';
 }
+
+/* ------------------------------------------------------------
+   Tailwind utility recolor — remap the existing palette to the
+   dark design tokens. This lets every page that uses bg-white,
+   bg-slate-X, text-slate-X, border-slate-X get the new look
+   without touching its source.
+   ------------------------------------------------------------ */
+@layer utilities {
+  /* Surfaces */
+  .bg-white          { background-color: var(--bg-surface) !important; }
+  .bg-slate-50       { background-color: var(--bg-surface-2) !important; }
+  .bg-slate-100      { background-color: var(--bg-elevated) !important; }
+  .bg-slate-200      { background-color: var(--bg-hover) !important; }
+  .bg-slate-300      { background-color: var(--bg-hover) !important; }
+  .bg-slate-700      { background-color: var(--bg-elevated) !important; }
+  .bg-slate-800      { background-color: var(--bg-canvas) !important; }
+  .bg-slate-900      { background-color: var(--bg-canvas) !important; }
+
+  /* Hover backgrounds */
+  .hover\:bg-slate-50:hover    { background-color: var(--bg-surface-2) !important; }
+  .hover\:bg-slate-100:hover   { background-color: var(--bg-hover) !important; }
+  .hover\:bg-slate-200:hover   { background-color: var(--bg-hover) !important; }
+  .hover\:bg-slate-800:hover   { background-color: var(--bg-elevated) !important; }
+  .hover\:bg-white:hover       { background-color: var(--bg-elevated) !important; }
+
+  /* Borders */
+  .border-slate-100  { border-color: var(--border-subtle) !important; }
+  .border-slate-200  { border-color: var(--border-subtle) !important; }
+  .border-slate-300  { border-color: var(--border) !important; }
+  .border-slate-400  { border-color: var(--border-strong) !important; }
+  .border-slate-800  { border-color: var(--border) !important; }
+  .divide-slate-100 > * + * { border-color: var(--border-subtle) !important; }
+  .divide-slate-200 > * + * { border-color: var(--border-subtle) !important; }
+  .hover\:border-slate-400:hover { border-color: var(--border-strong) !important; }
+
+  /* Text */
+  .text-slate-900    { color: var(--fg-primary) !important; }
+  .text-slate-800    { color: var(--fg-primary) !important; }
+  .text-slate-700    { color: var(--fg-secondary) !important; }
+  .text-slate-600    { color: var(--fg-secondary) !important; }
+  .text-slate-500    { color: var(--fg-tertiary) !important; }
+  .text-slate-400    { color: var(--fg-tertiary) !important; }
+  .text-slate-300    { color: var(--fg-quaternary) !important; }
+  .text-slate-200    { color: var(--fg-quaternary) !important; }
+  .text-slate-100    { color: var(--fg-primary) !important; }
+  .hover\:text-slate-700:hover { color: var(--fg-primary) !important; }
+  .hover\:text-slate-600:hover { color: var(--fg-secondary) !important; }
+  .hover\:text-slate-500:hover { color: var(--fg-secondary) !important; }
+  .hover\:text-white:hover     { color: var(--fg-primary) !important; }
+
+  /* Brand accents — recolor brand to "neutral indigo" for highlight */
+  .bg-brand-50       { background-color: var(--neutral-bg) !important; }
+  .bg-brand-100      { background-color: oklch(0.72 0.16 260 / 0.18) !important; }
+  .bg-brand-600      { background-color: var(--neutral) !important; }
+  .bg-brand-700      { background-color: oklch(0.62 0.16 260) !important; }
+  .border-brand-100  { border-color: oklch(0.72 0.16 260 / 0.30) !important; }
+  .border-brand-200  { border-color: oklch(0.72 0.16 260 / 0.40) !important; }
+  .border-brand-300  { border-color: oklch(0.72 0.16 260 / 0.50) !important; }
+  .border-brand-400  { border-color: oklch(0.72 0.16 260 / 0.60) !important; }
+  .text-brand-600    { color: var(--neutral) !important; }
+  .text-brand-700    { color: var(--neutral) !important; }
+  .text-brand-800    { color: oklch(0.85 0.12 260) !important; }
+  .text-brand-900    { color: oklch(0.92 0.08 260) !important; }
+  .hover\:bg-brand-700:hover { background-color: oklch(0.66 0.16 260) !important; }
+  .hover\:text-brand-600:hover { color: var(--neutral) !important; }
+  .hover\:text-brand-700:hover { color: var(--neutral) !important; }
+  .focus\:border-brand-500:focus { border-color: var(--neutral) !important; }
+  .focus\:ring-brand-500:focus { --tw-ring-color: var(--neutral) !important; }
+
+  /* Semantic — emerald = gain, red = loss, amber = warn */
+  .bg-emerald-50     { background-color: var(--gain-bg) !important; }
+  .bg-emerald-100    { background-color: oklch(0.78 0.18 152 / 0.18) !important; }
+  .bg-emerald-600    { background-color: var(--gain) !important; }
+  .bg-emerald-700    { background-color: oklch(0.66 0.18 152) !important; }
+  .hover\:bg-emerald-100:hover { background-color: oklch(0.78 0.18 152 / 0.18) !important; }
+  .hover\:bg-emerald-700:hover { background-color: oklch(0.66 0.18 152) !important; }
+  .border-emerald-100 { border-color: oklch(0.78 0.18 152 / 0.30) !important; }
+  .border-emerald-200 { border-color: var(--gain-border) !important; }
+  .text-emerald-500  { color: var(--gain) !important; }
+  .text-emerald-600  { color: var(--gain) !important; }
+  .text-emerald-700  { color: var(--gain) !important; }
+  .text-emerald-800  { color: oklch(0.85 0.16 152) !important; }
+  .text-emerald-900  { color: oklch(0.92 0.10 152) !important; }
+
+  .bg-red-50         { background-color: var(--loss-bg) !important; }
+  .bg-red-100        { background-color: oklch(0.70 0.21 25 / 0.18) !important; }
+  .border-red-200    { border-color: var(--loss-border) !important; }
+  .border-red-300    { border-color: oklch(0.70 0.21 25 / 0.40) !important; }
+  .text-red-500      { color: var(--loss) !important; }
+  .text-red-600      { color: var(--loss) !important; }
+  .text-red-700      { color: var(--loss) !important; }
+  .text-red-800      { color: oklch(0.80 0.18 25) !important; }
+  .text-red-900      { color: oklch(0.88 0.14 25) !important; }
+  .hover\:bg-red-50:hover { background-color: var(--loss-bg) !important; }
+  .hover\:text-red-500:hover { color: var(--loss) !important; }
+  .hover\:text-red-600:hover { color: var(--loss) !important; }
+
+  .bg-amber-50       { background-color: var(--warn-bg) !important; }
+  .bg-amber-100      { background-color: oklch(0.82 0.16 85 / 0.18) !important; }
+  .border-amber-200  { border-color: var(--warn-border) !important; }
+  .border-amber-300  { border-color: oklch(0.82 0.16 85 / 0.45) !important; }
+  .text-amber-500    { color: var(--warn) !important; }
+  .text-amber-600    { color: var(--warn) !important; }
+  .text-amber-700    { color: var(--warn) !important; }
+  .text-amber-800    { color: oklch(0.88 0.14 85) !important; }
+  .text-amber-900    { color: oklch(0.92 0.10 85) !important; }
+  .hover\:bg-amber-700:hover { background-color: oklch(0.70 0.16 85) !important; }
+
+  .bg-violet-50      { background-color: oklch(0.72 0.16 290 / 0.10) !important; }
+  .bg-violet-100     { background-color: oklch(0.72 0.16 290 / 0.18) !important; }
+  .border-violet-100 { border-color: oklch(0.72 0.16 290 / 0.30) !important; }
+  .border-violet-200 { border-color: oklch(0.72 0.16 290 / 0.40) !important; }
+  .text-violet-700   { color: oklch(0.78 0.16 290) !important; }
+
+  .bg-sky-50         { background-color: oklch(0.72 0.14 230 / 0.08) !important; }
+  .border-sky-200    { border-color: oklch(0.72 0.14 230 / 0.30) !important; }
+  .text-sky-700      { color: oklch(0.78 0.14 230) !important; }
+  .text-sky-800      { color: oklch(0.85 0.10 230) !important; }
+  .text-sky-900      { color: oklch(0.92 0.06 230) !important; }
+
+  .bg-blue-700       { color: oklch(0.78 0.14 240) !important; }
+  .text-blue-700     { color: oklch(0.78 0.14 240) !important; }
+  .text-purple-700   { color: oklch(0.78 0.16 290) !important; }
+
+  /* Hover variants for translucent surfaces (e.g. /50 versions used in tables) */
+  .hover\:bg-slate-50\/50:hover  { background-color: var(--bg-surface-2) !important; }
+  .hover\:bg-slate-50\/40:hover  { background-color: var(--bg-surface-2) !important; }
+  .hover\:bg-slate-50\/60:hover  { background-color: var(--bg-surface-2) !important; }
+
+  /* Translucent backgrounds used as section dividers */
+  .bg-slate-50\/50   { background-color: oklch(0.215 0.012 255 / 0.5) !important; }
+  .bg-emerald-50\/50 { background-color: oklch(0.78 0.18 152 / 0.06) !important; }
+  .bg-red-50\/50     { background-color: oklch(0.70 0.21 25 / 0.06) !important; }
+
+  /* Modal scrim */
+  .bg-slate-900\/50  { background-color: oklch(0 0 0 / 0.65) !important; }
+}
+
+/* ------------------------------------------------------------
+   Form controls — inherit dark surface
+   ------------------------------------------------------------ */
+input[type='text'],
+input[type='number'],
+input[type='date'],
+input[type='search'],
+input[type='email'],
+input[type='password'],
+select,
+textarea {
+  background-color: var(--bg-surface-2);
+  color: var(--fg-primary);
+  border-color: var(--border);
+}
+input::placeholder, textarea::placeholder { color: var(--fg-quaternary); }
+
+input[type='checkbox'], input[type='radio'] {
+  accent-color: var(--neutral);
+}
+
+/* select option dropdown */
+select option {
+  background-color: var(--bg-elevated);
+  color: var(--fg-primary);
+}
+
+code {
+  font-family: var(--font-mono);
+  background: var(--bg-surface-2);
+  color: var(--fg-secondary);
+}
+
+/* ============================================================
+   Typography utilities
+   ============================================================ */
+.t-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.t-num {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+  letter-spacing: -0.01em;
+}
+.t-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-tertiary);
+}
+.t-mute  { color: var(--fg-tertiary); }
+.t-mute2 { color: var(--fg-secondary); }
+
+.tabular-nums {
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+}
+
+/* ============================================================
+   Sidebar / shell
+   ============================================================ */
+.sb-brand-mark {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, oklch(0.78 0.18 152), oklch(0.62 0.20 200));
+  display: grid; place-items: center;
+  color: var(--bg-canvas);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.3);
+}
+.sb-brand-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--fg-primary);
+}
+.sb-brand-sub {
+  font-size: 11px;
+  color: var(--fg-tertiary);
+  margin-top: -1px;
+}
+.sb-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-quaternary);
+  padding: 8px 10px 4px;
+}
+.sb-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  transition: background 120ms ease, color 120ms ease;
+  text-decoration: none;
+}
+.sb-item:hover { background: var(--bg-surface); color: var(--fg-primary); }
+.sb-item.active {
+  background: var(--bg-surface-2);
+  color: var(--fg-primary);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* ============================================================
+   Buttons / chips / pills (design-system primitives)
+   ============================================================ */
+.ds-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--fg-primary);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.ds-btn:hover:not(:disabled) { background: var(--bg-surface-2); border-color: var(--border-strong); }
+.ds-btn-ghost { background: transparent; }
+.ds-btn-primary {
+  background: var(--fg-primary);
+  color: var(--bg-canvas);
+  border-color: var(--fg-primary);
+  font-weight: 600;
+}
+.ds-btn-primary:hover:not(:disabled) { background: oklch(0.92 0.005 255); }
+.ds-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.ds-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  color: var(--fg-secondary);
+}
+.ds-chip-gain { background: var(--gain-bg); border-color: var(--gain-border); color: var(--gain); }
+.ds-chip-loss { background: var(--loss-bg); border-color: var(--loss-border); color: var(--loss); }
+.ds-chip-warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn); }
+
+/* ============================================================
+   Cards
+   ============================================================ */
+.ds-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.ds-card-pad { padding: 22px 24px; }
+.ds-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 12px;
+}
+.ds-card-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 0;
+  color: var(--fg-primary);
+}
+
+/* ============================================================
+   Page header
+   ============================================================ */
+.ds-page-header {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ds-page-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+  color: var(--fg-primary);
+}
+.ds-page-subtitle {
+  font-size: 13px;
+  color: var(--fg-tertiary);
+  max-width: 580px;
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 10px; border: 2px solid var(--bg-canvas); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ============================================================
+   Entrance animation
+   ============================================================ */
+@keyframes ds-fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ds-fade-in { animation: ds-fadeUp 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+@keyframes ds-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Recharts theming — make charts read against dark canvas
+   ============================================================ */
+.recharts-cartesian-grid line { stroke: var(--border-subtle); }
+.recharts-cartesian-axis line { stroke: var(--border-subtle); }
+.recharts-cartesian-axis-tick-value tspan { fill: var(--fg-tertiary); }
+.recharts-default-tooltip {
+  background-color: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+.recharts-tooltip-label { color: var(--fg-primary) !important; }
+.recharts-tooltip-item { color: var(--fg-secondary) !important; }
+.recharts-legend-item-text { color: var(--fg-secondary) !important; }
+.recharts-reference-line line { stroke: var(--fg-tertiary); }

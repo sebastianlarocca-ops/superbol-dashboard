@@ -84,11 +84,11 @@ export function CMVPage() {
   });
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <header className="mb-6 flex items-start justify-between gap-4">
+    <div className="ds-fade-in" style={{ padding: '28px 36px 80px', maxWidth: 1380, margin: '0 auto' }}>
+      <header className="ds-page-header">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Costo de Mercadería Vendida</h2>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="ds-page-title">Costo de Mercadería Vendida</h1>
+          <p className="ds-page-subtitle">
             Cálculo CMV con composición del costo financiero por categoría.
           </p>
         </div>
@@ -120,8 +120,10 @@ export function CMVPage() {
       {periodo && data && data.items.length > 0 && (
         <>
           {/* Period title */}
-          <div className="mb-6 border-b border-slate-200 pb-3">
-            <h3 className="text-lg font-medium text-slate-700">{fmtPeriodo(periodo)}</h3>
+          <div className="mb-6 pb-3" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+            <h3 className="t-display" style={{ fontSize: 18, color: 'var(--fg-primary)' }}>
+              {fmtPeriodo(periodo)}
+            </h3>
           </div>
 
           {/* Formula block */}
@@ -481,18 +483,22 @@ function CFChart({ items, periodo }: { items: CMVItem[]; periodo: string }) {
           data={data}
           margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.012 255 / 0.3)" horizontal={false} />
           <XAxis
             type="number"
-            stroke="#64748b"
-            tick={{ fontSize: 11 }}
+            stroke="oklch(0.58 0.010 255)"
+            tick={{ fontSize: 11, fill: 'oklch(0.58 0.010 255)' }}
+            tickLine={{ stroke: 'oklch(0.30 0.012 255 / 0.3)' }}
+            axisLine={{ stroke: 'oklch(0.30 0.012 255 / 0.3)' }}
             tickFormatter={(v: number) => fmtMoneyCompact(v)}
           />
           <YAxis
             type="category"
             dataKey="categoria"
-            stroke="#64748b"
-            tick={{ fontSize: 10 }}
+            stroke="oklch(0.58 0.010 255)"
+            tick={{ fontSize: 10, fill: 'oklch(0.78 0.008 255)' }}
+            tickLine={{ stroke: 'oklch(0.30 0.012 255 / 0.3)' }}
+            axisLine={{ stroke: 'oklch(0.30 0.012 255 / 0.3)' }}
             width={200}
           />
           <Tooltip
@@ -501,16 +507,19 @@ function CFChart({ items, periodo }: { items: CMVItem[]; periodo: string }) {
             }
             contentStyle={{
               fontSize: 12,
-              borderRadius: 6,
-              border: '1px solid #e2e8f0',
+              borderRadius: 10,
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+              color: 'var(--fg-primary)',
             }}
+            cursor={{ fill: 'oklch(0.30 0.012 255 / 0.3)' }}
           />
-          <ReferenceLine x={0} stroke="#475569" />
+          <ReferenceLine x={0} stroke="oklch(0.58 0.010 255)" />
           <Bar dataKey="cf" name="Costo financiero" isAnimationActive={false}>
             {data.map((d) => (
               <Cell
                 key={d.categoria}
-                fill={d.cf >= 0 ? '#059669' : '#dc2626'}
+                fill={d.cf >= 0 ? 'oklch(0.78 0.18 152)' : 'oklch(0.70 0.21 25)'}
               />
             ))}
           </Bar>

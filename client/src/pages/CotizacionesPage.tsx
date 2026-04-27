@@ -65,18 +65,18 @@ export function CotizacionesPage() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="ds-fade-in" style={{ padding: '28px 36px 80px', maxWidth: 1080, margin: '0 auto' }}>
+      <header className="ds-page-header">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Cotizaciones dólar</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <h1 className="ds-page-title">Cotizaciones dólar</h1>
+          <p className="ds-page-subtitle">
             Tipo de cambio bolsa (promedio compra/venta) por período. Usado para la vista en USD.
           </p>
         </div>
         <button
           onClick={() => syncMutation.mutate()}
           disabled={syncMutation.isPending}
-          className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-md text-sm hover:bg-brand-700 disabled:opacity-60"
+          className="ds-btn ds-btn-primary disabled:opacity-60"
         >
           {syncMutation.isPending ? (
             <Loader2 size={14} className="animate-spin" />
@@ -85,7 +85,8 @@ export function CotizacionesPage() {
           )}
           Sincronizar desde API
         </button>
-      </div>
+      </header>
+      <div className="space-y-5">
 
       {syncMutation.isSuccess && (
         <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-4 py-2">
@@ -237,6 +238,7 @@ export function CotizacionesPage() {
           </table>
         </div>
       )}
+      </div>
     </div>
   );
 }

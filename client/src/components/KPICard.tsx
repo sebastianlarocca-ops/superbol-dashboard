@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { fmtPeriodo } from '../lib/format';
 import { useCurrency } from '../context/CurrencyContext';
 
@@ -14,7 +14,7 @@ export type KPICardProps = {
   isPercentage?: boolean;
   /** When the metric is a "cost" we paint negative (= ahorro) green. */
   invertSemantics?: boolean;
-  /** Used to highlight one or two flagship KPIs. */
+  /** Used to highlight one or two flagship KPIs (extra-prominent). */
   highlight?: boolean;
   /** Period for currency conversion (MM/YYYY). Required for money values. */
   periodo?: string | null;
@@ -54,57 +54,64 @@ export function KPICard({
     }
   }
 
-  // Color logic
   const isGood =
     deltaAbs === null
       ? null
       : invertSemantics
-        ? deltaAbs < 0 // for costs, less is better
+        ? deltaAbs < 0
         : deltaAbs > 0;
-  const Icon =
-    deltaAbs === null || deltaAbs === 0 ? Minus : isGood ? TrendingUp : TrendingDown;
-  const deltaColor =
+  const Arrow =
+    deltaAbs === null || deltaAbs === 0 ? Minus : isGood ? ArrowUp : ArrowDown;
+  const deltaClass =
     isGood === null
-      ? 'text-slate-400'
+      ? 'text-[var(--fg-tertiary)]'
       : isGood
-        ? 'text-emerald-700'
-        : 'text-red-700';
+        ? 'text-[var(--gain)]'
+        : 'text-[var(--loss)]';
 
   return (
     <div
-      className={clsx(
-        'rounded-lg border p-4 bg-white',
-        highlight ? 'border-brand-300 shadow-sm' : 'border-slate-200',
-      )}
+      className={clsx('ds-card', highlight && 'shadow-card')}
+      style={{
+        padding: '18px 20px',
+        ...(highlight ? { borderColor: 'var(--gain-border)' } : null),
+      }}
     >
-      <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
-        {label}
-      </div>
-      <div
-        className={clsx(
-          'text-2xl font-bold tabular-nums mb-1',
-          highlight ? 'text-brand-800' : 'text-slate-900',
+      <div className="flex items-center justify-between mb-3">
+        <div className="t-label">{label}</div>
+        {hasDelta && deltaPct !== null && (
+          <span className={clsx('inline-flex items-center gap-0.5 t-num text-xs', deltaClass)}>
+            <Arrow size={11} />
+            {Math.abs(deltaPct).toFixed(1)}%
+          </span>
         )}
+      </div>
+
+      <div
+        className="t-num mb-3"
+        style={{
+          fontSize: highlight ? 24 : 22,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          color: 'var(--fg-primary)',
+        }}
       >
         {formatted}
       </div>
+
       {hasDelta ? (
-        <div className={clsx('flex items-center gap-1 text-xs', deltaColor)}>
-          <Icon size={12} />
-          <span className="font-medium tabular-nums">
-            {deltaPct === null
-              ? '—'
-              : `${deltaPct > 0 ? '+' : ''}${deltaPct.toFixed(1)}%`}
-          </span>
-          <span className="text-slate-500">
-            ({isPercentage
+        <div className="text-[11px]" style={{ color: 'var(--fg-tertiary)' }}>
+          <span className="t-num">
+            {isPercentage
               ? `${(previousValue ?? 0).toFixed(1)}%`
               : `${prefix}${fmt(previousValue ?? 0, periodo)}`}
-            {previousLabel && ` · ${previousLabel}`})
           </span>
+          {previousLabel && <span> · {previousLabel}</span>}
         </div>
       ) : (
-        <div className="text-xs text-slate-400 italic">primer período cargado</div>
+        <div className="text-[11px] italic" style={{ color: 'var(--fg-quaternary)' }}>
+          primer período cargado
+        </div>
       )}
     </div>
   );

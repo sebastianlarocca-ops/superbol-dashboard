@@ -337,10 +337,21 @@ export function MovimientosPage() {
   }));
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full ds-fade-in">
       {/* Period range + header */}
-      <header className="px-6 py-4 border-b border-slate-200 bg-white flex items-center gap-4 flex-shrink-0 flex-wrap">
-        <h1 className="text-lg font-semibold text-slate-900 mr-2">Movimientos</h1>
+      <header
+        className="px-6 py-4 flex items-center gap-4 flex-shrink-0 flex-wrap"
+        style={{
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-canvas)',
+        }}
+      >
+        <h1
+          className="t-display mr-2"
+          style={{ fontSize: 22, fontWeight: 600, color: 'var(--fg-primary)' }}
+        >
+          Movimientos
+        </h1>
 
         <label className="flex items-center gap-2 text-sm text-slate-600">
           Desde

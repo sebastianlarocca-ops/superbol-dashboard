@@ -4,20 +4,20 @@ import clsx from 'clsx';
 
 export function CurrencyToggle() {
   const { currency, toggle } = useCurrency();
+  const active = currency === 'USD';
 
   return (
     <button
       onClick={toggle}
       className={clsx(
-        'flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors w-full',
-        currency === 'USD'
-          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-          : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white',
+        'ds-chip w-full justify-center cursor-pointer transition-colors',
+        active && 'ds-chip-gain',
       )}
-      title={currency === 'ARS' ? 'Cambiar a USD' : 'Cambiar a ARS'}
+      title={active ? 'Cambiar a ARS' : 'Cambiar a USD'}
+      style={{ padding: '6px 10px' }}
     >
-      <DollarSign size={14} />
-      <span>{currency === 'ARS' ? 'Ver en USD' : 'Viendo en USD'}</span>
+      <DollarSign size={12} />
+      <span>{active ? 'Viendo en USD' : 'Ver en USD'}</span>
     </button>
   );
 }

@@ -68,17 +68,17 @@ export function ResultadosPage() {
   });
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <header className="mb-6 flex items-start justify-between gap-4">
+    <div className="ds-fade-in" style={{ padding: '28px 36px 80px', maxWidth: 1280, margin: '0 auto' }}>
+      <header className="ds-page-header">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Estado de Resultados</h2>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="ds-page-title">Estado de Resultados</h1>
+          <p className="ds-page-subtitle">
             P&L consolidado del período. Click en una cuenta para ver el detalle de movimientos.
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <PeriodSelector value={periodo} onChange={setPeriodo} />
-          <label className="text-xs text-slate-600 flex items-center gap-2 cursor-pointer">
+          <label className="text-xs flex items-center gap-2 cursor-pointer" style={{ color: 'var(--fg-secondary)' }}>
             <input
               type="checkbox"
               checked={includeAnulados}
@@ -111,8 +111,10 @@ export function ResultadosPage() {
       {periodo && data && (
         <>
           {/* Summary header */}
-          <div className="mb-6 flex items-baseline justify-between border-b border-slate-200 pb-3">
-            <h3 className="text-lg font-medium text-slate-700">{fmtPeriodo(periodo)}</h3>
+          <div className="mb-6 flex items-baseline justify-between pb-3" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+            <h3 className="t-display" style={{ fontSize: 18, color: 'var(--fg-primary)' }}>
+              {fmtPeriodo(periodo)}
+            </h3>
             <ResultadoNetoBadge value={data.resultadoNeto} periodo={periodo} />
           </div>
 
@@ -333,9 +335,29 @@ function ResultadoNetoRow({ value, periodo }: { value: number; periodo: string }
   const { fmt, currency } = useCurrency();
   const prefix = currency === 'USD' ? '' : '$ ';
   return (
-    <div className="mt-6 bg-slate-50 border border-slate-300 rounded-md px-6 py-4 flex items-center justify-between">
-      <span className="font-semibold text-slate-800">RESULTADO NETO</span>
-      <span className={clsx('text-2xl font-bold tabular-nums', value >= 0 ? 'text-emerald-700' : 'text-red-700')}>
+    <div
+      className="ds-card mt-6 flex items-center justify-between"
+      style={{
+        padding: '20px 28px',
+        background: value >= 0
+          ? 'linear-gradient(90deg, oklch(0.78 0.18 152 / 0.08), transparent 70%), var(--bg-surface)'
+          : 'linear-gradient(90deg, oklch(0.70 0.21 25 / 0.08), transparent 70%), var(--bg-surface)',
+      }}
+    >
+      <span
+        className="t-display"
+        style={{ fontWeight: 700, fontSize: 15, letterSpacing: '0.02em', color: 'var(--fg-primary)' }}
+      >
+        RESULTADO NETO
+      </span>
+      <span
+        className="t-num"
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          color: value >= 0 ? 'var(--gain)' : 'var(--loss)',
+        }}
+      >
         {prefix}{fmt(value, periodo)}
       </span>
     </div>
