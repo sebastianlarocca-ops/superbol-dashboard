@@ -13,22 +13,26 @@ import {
  *
  * Column layout of INFORME (after header row ~16):
  *   A: categoria (string)
- *   B: Suma de INVENTARIO JUNIO (unid raw) — IGNORED (we use J)
- *   C: Suma de COSTO INVENTARIO JUNIO ($)  — IGNORED (we use J × L)
+ *   B: Suma de INVENTARIO <mes> (unid raw) — IGNORED (we use the dynamic cols)
+ *   C: Suma de COSTO INVENTARIO <mes> ($)  — IGNORED
  *   D: Suma de CONTEO 1 / E: MERMA 1
  *   F: Suma de conteo 2 / G: MERMA 2
- *   H: Suma de VALOR FINAL ($)             — IGNORED (we use M × N)
+ *   H: Suma de VALOR FINAL ($)             — IGNORED
  *   I: Merma mensual %                     — kept for audit
- *   J: UNIDADES (junio)  ← SI units
- *   L: precio (junio)    ← SI price
- *   M: unid (julio)      ← SF units
- *   N: precio (julio)    ← SF price
+ *   J+: um/unid (mes anterior) ← SI units  — column detected dynamically
+ *       precio  (mes anterior) ← SI price  — column detected dynamically
+ *       unid    (mes en curso) ← SF units  — column detected dynamically
+ *       precio  (mes en curso) ← SF price  — column detected dynamically
  *
- * Decision to use J×L / M×N (not C / H) validated with Sebastián: Excel's
+ * The exact column offsets vary between monthly templates (e.g. an extra
+ * column was added between July and September). We detect them by scanning
+ * the header row for the pattern: um/unid → precio → unid → precio starting
+ * from column J (index 9).
+ *
+ * Decision to use unit×price (not C / H) validated with Sebastián: Excel's
  * pre-computed C and H columns come from DATOS/FORMS roll-ups that don't
- * always match the quantities in J/M (rounding, merma exclusions). For CMV
- * we want the user-visible unit × price, which is what they type into the
- * report.
+ * always match the quantities in the user-visible columns (rounding, merma
+ * exclusions).
  */
 export const parseInventory = (buffer: Buffer): InventoryParseResult => {
   const warnings: InventoryParseWarning[] = [];
@@ -71,9 +75,15 @@ export const parseInventory = (buffer: Buffer): InventoryParseResult => {
     return emptyResult(warnings);
   }
 
+  // Detect the four data column positions dynamically from the header row.
+  // Pattern starting from col J (9): (um|unid) precio unid precio
+  // This handles templates where an extra column exists between SI-units and
+  // SI-price (e.g. the September 2025 file has SI-price at K instead of L).
+  const colSI = detectInventoryCols(rawRows[headerRow] as unknown[], warnings);
+
   const rows: InventoryParsedRow[] = [];
-  let totalGeneralValorJunio: number | null = null;
-  let totalGeneralValorJulio: number | null = null;
+  let totalGeneralValorAnterior: number | null = null;
+  let totalGeneralValorEnCurso: number | null = null;
 
   for (let i = headerRow + 1; i < rawRows.length; i++) {
     const r = rawRows[i];
@@ -85,23 +95,19 @@ export const parseInventory = (buffer: Buffer): InventoryParseResult => {
 
     // "Total general" row — capture and stop (everything after is observations)
     if (/^total\s+general/i.test(categoria)) {
-      const b = toNum(r[1]);
       const c = toNum(r[2]);
-      // Totals in B/C are from Excel's pivot; we use them only for sanity check.
-      if (c !== null) totalGeneralValorJunio = c;
-      // Total general de valor julio sale del H (col 7) del total
+      if (c !== null) totalGeneralValorAnterior = c;
       const h = toNum(r[7]);
-      if (h !== null) totalGeneralValorJulio = h;
-      void b;
+      if (h !== null) totalGeneralValorEnCurso = h;
       break;
     }
 
-    // Core numeric fields. If J/L/M/N are all zero/null we skip (empty category).
-    const unidMesAnterior = toNum(r[9]) ?? 0; // J
-    const precioMesAnterior = toNum(r[11]) ?? 0; // L
-    const unidMesEnCurso = toNum(r[12]) ?? 0; // M
-    const precioMesEnCurso = toNum(r[13]) ?? 0; // N
-    const mermaPct = toNum(r[8]); // I
+    // Core numeric fields — use dynamically detected column indices.
+    const unidMesAnterior = toNum(r[colSI.unidAnterior]) ?? 0;
+    const precioMesAnterior = toNum(r[colSI.precioAnterior]) ?? 0;
+    const unidMesEnCurso = toNum(r[colSI.unidEnCurso]) ?? 0;
+    const precioMesEnCurso = toNum(r[colSI.precioEnCurso]) ?? 0;
+    const mermaPct = toNum(r[8]); // col I — stable across templates
 
     if (
       unidMesAnterior === 0 &&
@@ -130,34 +136,30 @@ export const parseInventory = (buffer: Buffer): InventoryParseResult => {
   const totalValorMesAnterior = rows.reduce((s, r) => s + r.valorMesAnterior, 0);
   const totalValorMesEnCurso = rows.reduce((s, r) => s + r.valorMesEnCurso, 0);
 
-  // Sanity check against Excel's "Total general" — useful to flag divergences
-  // between J×L and C (pre-computed). Tolerance: 0.5% (prices are stored with
-  // many decimals in Excel; reconstructed totals drift slightly).
-  if (totalGeneralValorJulio !== null) {
-    const drift = Math.abs(totalValorMesEnCurso - totalGeneralValorJulio);
-    const rel = totalGeneralValorJulio === 0 ? 0 : drift / totalGeneralValorJulio;
+  // Sanity check against Excel's pre-computed "Total general" row.
+  // Tolerance: 0.5% for SF (H col), 5% for SI (C col — different pivot, more drift).
+  if (totalGeneralValorEnCurso !== null) {
+    const drift = Math.abs(totalValorMesEnCurso - totalGeneralValorEnCurso);
+    const rel = totalGeneralValorEnCurso === 0 ? 0 : drift / totalGeneralValorEnCurso;
     if (rel > 0.005) {
       warnings.push({
         code: 'TOTAL_MISMATCH',
         message:
-          `Σ(M×N) = ${totalValorMesEnCurso.toFixed(2)} difiere de "Total general" H = ` +
-          `${totalGeneralValorJulio.toFixed(2)} (drift ${(rel * 100).toFixed(2)}%)`,
+          `Σ(SF unid × precio) = ${totalValorMesEnCurso.toFixed(2)} difiere de "Total general" H = ` +
+          `${totalGeneralValorEnCurso.toFixed(2)} (drift ${(rel * 100).toFixed(2)}%)`,
       });
     }
   }
-  // Junio too, but we warn only once to avoid noise.
-  if (totalGeneralValorJunio !== null) {
-    const drift = Math.abs(totalValorMesAnterior - totalGeneralValorJunio);
-    const rel = totalGeneralValorJunio === 0 ? 0 : drift / totalGeneralValorJunio;
+  if (totalGeneralValorAnterior !== null) {
+    const drift = Math.abs(totalValorMesAnterior - totalGeneralValorAnterior);
+    const rel = totalGeneralValorAnterior === 0 ? 0 : drift / totalGeneralValorAnterior;
     if (rel > 0.05) {
-      // Wider tolerance for the junio col — C comes from a different pivot
-      // that may include items absent from J (historic drift).
       warnings.push({
         code: 'TOTAL_MISMATCH',
         message:
-          `Σ(J×L) = ${totalValorMesAnterior.toFixed(2)} difiere de "Total general" C = ` +
-          `${totalGeneralValorJunio.toFixed(2)} (drift ${(rel * 100).toFixed(2)}%) — ` +
-          `esperable si C usa pivot histórico distinto de J`,
+          `Σ(SI unid × precio) = ${totalValorMesAnterior.toFixed(2)} difiere de "Total general" C = ` +
+          `${totalGeneralValorAnterior.toFixed(2)} (drift ${(rel * 100).toFixed(2)}%) — ` +
+          `esperable si C usa pivot histórico distinto`,
       });
     }
   }
@@ -171,6 +173,61 @@ export const parseInventory = (buffer: Buffer): InventoryParseResult => {
       totalValorMesAnterior,
       totalValorMesEnCurso,
     },
+  };
+};
+
+interface ColIndices {
+  unidAnterior: number;
+  precioAnterior: number;
+  unidEnCurso: number;
+  precioEnCurso: number;
+}
+
+/**
+ * Scan the header row (starting at col J / index 9) for the four data columns
+ * using the pattern: (um|unid) → precio → unid → precio.
+ * Falls back to the original hardcoded indices if the pattern isn't found.
+ */
+const detectInventoryCols = (
+  headerRow: unknown[],
+  warnings: InventoryParseWarning[],
+): ColIndices => {
+  const fallback: ColIndices = { unidAnterior: 9, precioAnterior: 11, unidEnCurso: 12, precioEnCurso: 13 };
+
+  const found: number[] = [];
+  // State: 0=looking for SI-units, 1=looking for SI-price, 2=looking for SF-units, 3=looking for SF-price
+  let state = 0;
+  for (let c = 9; c < headerRow.length && found.length < 4; c++) {
+    const raw = headerRow[c];
+    if (typeof raw !== 'string') continue;
+    const v = raw.toLowerCase().trim();
+    if (state === 0 && (v === 'um' || v === 'unid' || v.startsWith('unid'))) {
+      found.push(c); state = 1;
+    } else if (state === 1 && v.includes('precio')) {
+      found.push(c); state = 2;
+    } else if (state === 2 && (v === 'unid' || v.startsWith('unid'))) {
+      found.push(c); state = 3;
+    } else if (state === 3 && v.includes('precio')) {
+      found.push(c); state = 4;
+    }
+  }
+
+  if (found.length < 4) {
+    warnings.push({
+      code: 'HEADER_NOT_FOUND',
+      message:
+        `No se detectaron las 4 columnas de inventario (um/unid + precio + unid + precio) ` +
+        `en la fila header. Usando columnas por defecto (J, L, M, N). ` +
+        `Columnas detectadas: ${found.length} en posiciones [${found.join(', ')}]`,
+    });
+    return fallback;
+  }
+
+  return {
+    unidAnterior: found[0],
+    precioAnterior: found[1],
+    unidEnCurso: found[2],
+    precioEnCurso: found[3],
   };
 };
 
