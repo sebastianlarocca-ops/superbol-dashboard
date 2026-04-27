@@ -167,11 +167,11 @@ export function MovimientosManualesPage() {
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <header className="mb-6 flex items-start justify-between gap-4">
+    <div className="ds-fade-in" style={{ padding: '28px 36px 80px', maxWidth: 1280, margin: '0 auto' }}>
+      <header className="ds-page-header">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Movimientos manuales</h2>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="ds-page-title">Movimientos manuales</h1>
+          <p className="ds-page-subtitle">
             Asientos que no están en el mayor — IIBB, sueldos, honorarios directores, etc.
             Sobreviven a re-ingestas del período.
           </p>

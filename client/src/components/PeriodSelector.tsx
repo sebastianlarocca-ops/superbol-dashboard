@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, Loader2 } from 'lucide-react';
+import { Calendar, Loader2, ChevronDown } from 'lucide-react';
 import { api } from '../lib/axios';
 import { fmtPeriodo } from '../lib/format';
 
@@ -24,41 +24,49 @@ export function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
     staleTime: 60_000,
   });
 
-  // When the list arrives and we don't have a value yet, pick the first one.
   if (data && data.periodos.length > 0 && !value) {
     queueMicrotask(() => onChange(data.periodos[0].periodo));
   }
 
+  if (isLoading) {
+    return (
+      <span className="ds-chip">
+        <Loader2 size={12} className="animate-spin" /> cargando…
+      </span>
+    );
+  }
+
+  if (error) {
+    return <span className="ds-chip ds-chip-loss">Error al cargar períodos</span>;
+  }
+
+  if (data && data.periodos.length === 0) {
+    return <span className="ds-chip">Sin períodos cargados — andá a Ingesta</span>;
+  }
+
   return (
-    <div className="flex items-center gap-2">
-      <Calendar size={16} className="text-slate-500" />
-      <label htmlFor="periodo-select" className="text-sm text-slate-600">
-        Período:
-      </label>
-      {isLoading ? (
-        <span className="text-sm text-slate-400 flex items-center gap-1">
-          <Loader2 size={14} className="animate-spin" /> cargando…
-        </span>
-      ) : error ? (
-        <span className="text-sm text-red-600">Error al cargar períodos</span>
-      ) : data && data.periodos.length === 0 ? (
-        <span className="text-sm text-slate-500">
-          Sin períodos cargados — andá a Ingesta
-        </span>
-      ) : (
-        <select
-          id="periodo-select"
-          value={value ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-          className="px-3 py-1.5 border border-slate-300 rounded-md text-sm bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          {data?.periodos.map((p) => (
-            <option key={p.periodo} value={p.periodo}>
-              {fmtPeriodo(p.periodo)} ({p.movs.toLocaleString()} movs)
-            </option>
-          ))}
-        </select>
-      )}
-    </div>
+    <label className="ds-btn ds-btn-ghost relative cursor-pointer" style={{ paddingRight: 28 }}>
+      <Calendar size={13} />
+      <span style={{ color: 'var(--fg-secondary)' }}>Período:</span>
+      <span style={{ color: 'var(--fg-primary)' }}>
+        {value ? fmtPeriodo(value) : '—'}
+      </span>
+      <ChevronDown
+        size={12}
+        className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+        style={{ color: 'var(--fg-tertiary)' }}
+      />
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute inset-0 opacity-0 cursor-pointer"
+      >
+        {data?.periodos.map((p) => (
+          <option key={p.periodo} value={p.periodo}>
+            {fmtPeriodo(p.periodo)} ({p.movs.toLocaleString()} movs)
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

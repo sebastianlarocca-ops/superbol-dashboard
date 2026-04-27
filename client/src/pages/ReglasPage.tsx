@@ -122,14 +122,17 @@ export function ReglasPage() {
   const subrGrupoKeys = Object.keys(subrGrupos).sort();
 
   return (
-    <div className="px-6 py-6 max-w-5xl mx-auto space-y-4">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-slate-900">Reglas y criterios</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Documentación de todas las transformaciones que se aplican sobre los movimientos
-          importados, en el orden en que se ejecutan.
-        </p>
-      </div>
+    <div className="ds-fade-in" style={{ padding: '28px 36px 80px', maxWidth: 1180, margin: '0 auto' }}>
+      <header className="ds-page-header">
+        <div>
+          <h1 className="ds-page-title">Reglas y criterios</h1>
+          <p className="ds-page-subtitle">
+            Documentación de todas las transformaciones que se aplican sobre los movimientos
+            importados, en el orden en que se ejecutan.
+          </p>
+        </div>
+      </header>
+      <div className="space-y-4">
 
       {/* ── 1. Clasificación de rubros ─────────────────────────────────── */}
       <Section title="1. Clasificación de rubros" badge="Estático" badgeColor="slate">
@@ -501,6 +504,7 @@ export function ReglasPage() {
           </div>
         </div>
       </Section>
+      </div>
     </div>
   );
 }

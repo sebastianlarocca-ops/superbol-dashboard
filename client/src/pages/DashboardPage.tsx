@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Database } from 'lucide-react';
+import { Loader2, Database, ArrowUp, ArrowDown, Sparkles } from 'lucide-react';
+import clsx from 'clsx';
 import { api } from '../lib/axios';
 import { fmtPeriodo } from '../lib/format';
+import { useCurrency } from '../context/CurrencyContext';
 import { PeriodSelector } from '../components/PeriodSelector';
 import { KPICard, prevPeriodLabel } from '../components/KPICard';
 import { EvolutionChart } from '../components/EvolutionChart';
@@ -29,7 +31,6 @@ export function DashboardPage() {
     staleTime: 30_000,
   });
 
-  // Find the selected period in the series + the immediately prior one.
   const { current, previous } = useMemo(() => {
     if (!data || !periodo) return { current: null, previous: null };
     const idx = data.serie.findIndex((p) => p.periodo === periodo);
@@ -41,43 +42,41 @@ export function DashboardPage() {
   }, [data, periodo]);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <header className="mb-6 flex items-start justify-between gap-4">
+    <div className="ds-fade-in" style={{ padding: '28px 36px 80px', maxWidth: 1380, margin: '0 auto' }}>
+      <header className="ds-page-header">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="ds-page-title">Dashboard</h1>
+          <p className="ds-page-subtitle">
             Resumen ejecutivo del cierre mensual con KPIs, evolución y P&L con porcentajes.
           </p>
         </div>
         <PeriodSelector value={periodo} onChange={setPeriodo} />
       </header>
 
-      {isLoading && (
-        <div className="bg-white rounded-lg border border-slate-200 p-12 text-center text-slate-500 flex items-center justify-center gap-2">
-          <Loader2 size={16} className="animate-spin" /> Cargando…
-        </div>
-      )}
+      {isLoading && <LoadingCard />}
 
       {error && (
-        <div className="bg-red-50 border border-red-300 rounded-md p-4 text-sm text-red-700">
-          Error al cargar la evolución.
+        <div className="ds-card ds-card-pad" style={{ borderColor: 'var(--loss-border)' }}>
+          <span style={{ color: 'var(--loss)' }}>Error al cargar la evolución.</span>
         </div>
       )}
 
-      {data && data.serie.length === 0 && (
-        <EmptyState />
-      )}
+      {data && data.serie.length === 0 && <EmptyState />}
 
       {data && current && (
         <>
+          <HeroCard current={current} previous={previous} />
+
           {/* KPIs */}
-          <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+          <section
+            className="grid gap-3 mb-5"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}
+          >
             <KPICard
               label="Ventas"
               value={current.ventas}
               previousValue={previous?.ventas}
               previousLabel={previous ? prevPeriodLabel(previous.periodo) : undefined}
-              highlight
               periodo={current.periodo}
             />
             <KPICard
@@ -86,14 +85,6 @@ export function DashboardPage() {
               previousValue={previous?.cmvAjustado}
               previousLabel={previous ? prevPeriodLabel(previous.periodo) : undefined}
               invertSemantics
-              periodo={current.periodo}
-            />
-            <KPICard
-              label="Resultado neto"
-              value={current.resultadoNeto}
-              previousValue={previous?.resultadoNeto}
-              previousLabel={previous ? prevPeriodLabel(previous.periodo) : undefined}
-              highlight
               periodo={current.periodo}
             />
             <KPICard
@@ -129,23 +120,34 @@ export function DashboardPage() {
           </section>
 
           {/* Evolution chart */}
-          <section className="bg-white rounded-lg border border-slate-200 p-5 mb-6">
-            <div className="flex items-baseline justify-between mb-3">
-              <h3 className="text-base font-semibold text-slate-800">Evolución mensual</h3>
-              <span className="text-xs text-slate-500">{data.count} períodos cargados</span>
+          <section className="ds-card mb-5">
+            <div className="ds-card-head">
+              <div>
+                <h3 className="ds-card-title">Evolución mensual</h3>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--fg-tertiary)' }}>
+                  {data.count} períodos cargados
+                </div>
+              </div>
+              <Sparkles size={13} style={{ color: 'var(--fg-tertiary)' }} />
             </div>
-            <EvolutionChart serie={data.serie} />
+            <div style={{ padding: '16px 18px 12px' }}>
+              <EvolutionChart serie={data.serie} />
+            </div>
           </section>
 
           {/* P&L with % */}
-          <section className="mb-6">
+          <section className="mb-5">
             <div className="flex items-baseline justify-between mb-3">
-              <h3 className="text-base font-semibold text-slate-800">
+              <h3
+                className="t-display"
+                style={{ fontSize: 16, color: 'var(--fg-primary)' }}
+              >
                 Estado de resultados — {fmtPeriodo(current.periodo)}
               </h3>
               <a
                 href="/resultados"
-                className="text-xs text-brand-600 hover:text-brand-700"
+                className="text-xs hover:underline"
+                style={{ color: 'var(--neutral)' }}
               >
                 Ver detalle expandible →
               </a>
@@ -168,13 +170,128 @@ export function DashboardPage() {
   );
 }
 
+// ─── HeroCard ──────────────────────────────────────────────────────────────
+
+function HeroCard({
+  current,
+  previous,
+}: {
+  current: EvolucionPoint;
+  previous: EvolucionPoint | null;
+}) {
+  const { fmt, currency } = useCurrency();
+  const prefix = currency === 'USD' ? '' : '$';
+
+  const deltaPct =
+    previous && previous.resultadoNeto !== 0
+      ? ((current.resultadoNeto - previous.resultadoNeto) / Math.abs(previous.resultadoNeto)) * 100
+      : null;
+  const positive = current.resultadoNeto >= 0;
+  const deltaPositive = deltaPct !== null && deltaPct >= 0;
+
+  return (
+    <div
+      className="ds-card relative overflow-hidden mb-5"
+      style={{ padding: '28px 32px' }}
+    >
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: -120,
+          right: -80,
+          width: 480,
+          height: 480,
+          background: positive
+            ? 'radial-gradient(circle, oklch(0.78 0.18 152 / 0.10), transparent 60%)'
+            : 'radial-gradient(circle, oklch(0.70 0.21 25 / 0.10), transparent 60%)',
+          pointerEvents: 'none',
+        }}
+      />
+      <div className="relative">
+        <div className="t-label">Resultado neto · {fmtPeriodo(current.periodo)}</div>
+        <div
+          className="t-num t-display"
+          style={{
+            fontSize: 56,
+            margin: '12px 0 14px',
+            letterSpacing: '-0.035em',
+            fontWeight: 600,
+            lineHeight: 1.05,
+          }}
+        >
+          <span
+            style={{ color: 'var(--fg-tertiary)', marginRight: 4, fontWeight: 400 }}
+          >
+            {prefix}
+          </span>
+          {fmt(current.resultadoNeto, current.periodo)}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {deltaPct !== null ? (
+            <span
+              className={clsx('ds-chip', deltaPositive ? 'ds-chip-gain' : 'ds-chip-loss')}
+            >
+              {deltaPositive ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+              {deltaPositive ? '+' : ''}
+              {deltaPct.toFixed(1)}%
+            </span>
+          ) : (
+            <span className="ds-chip">primer período</span>
+          )}
+          {previous && (
+            <span style={{ color: 'var(--fg-tertiary)', fontSize: 12.5 }}>
+              vs {fmtPeriodo(previous.periodo)}
+            </span>
+          )}
+          {previous && (
+            <>
+              <span style={{ color: 'var(--fg-quaternary)' }}>·</span>
+              <span style={{ color: 'var(--fg-secondary)', fontSize: 12.5 }}>
+                Ventas: {prefix}
+                {fmt(current.ventas, current.periodo)}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── States ────────────────────────────────────────────────────────────────
+
+function LoadingCard() {
+  return (
+    <div
+      className="ds-card flex items-center justify-center gap-2"
+      style={{ padding: 48, color: 'var(--fg-tertiary)' }}
+    >
+      <Loader2 size={16} className="animate-spin" /> Cargando…
+    </div>
+  );
+}
+
 function EmptyState() {
   return (
-    <div className="bg-white rounded-lg border border-dashed border-slate-300 p-12 text-center">
-      <Database size={32} className="text-slate-300 mx-auto mb-3" />
-      <p className="text-sm text-slate-600 font-medium mb-1">Aún no hay datos cargados</p>
-      <p className="text-xs text-slate-500">
-        Andá a <a href="/ingesta" className="text-brand-600 hover:underline">Ingesta</a> y subí el primer cierre mensual para ver el dashboard.
+    <div
+      className="ds-card text-center"
+      style={{
+        padding: 48,
+        borderStyle: 'dashed',
+        borderColor: 'var(--border)',
+      }}
+    >
+      <Database size={32} style={{ color: 'var(--fg-quaternary)', margin: '0 auto 12px' }} />
+      <p className="text-sm font-medium mb-1" style={{ color: 'var(--fg-secondary)' }}>
+        Aún no hay datos cargados
+      </p>
+      <p className="text-xs" style={{ color: 'var(--fg-tertiary)' }}>
+        Andá a{' '}
+        <a href="/ingesta" style={{ color: 'var(--neutral)' }} className="hover:underline">
+          Ingesta
+        </a>{' '}
+        y subí el primer cierre mensual para ver el dashboard.
       </p>
     </div>
   );

@@ -249,12 +249,14 @@ export function IngestaPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <header className="mb-6">
-        <h2 className="text-2xl font-semibold text-slate-900">Ingesta mensual</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Arrastrá uno o varios archivos. El sistema detecta el tipo y período de cada uno.
-        </p>
+    <div className="ds-fade-in" style={{ padding: '28px 36px 80px', maxWidth: 980, margin: '0 auto' }}>
+      <header className="ds-page-header">
+        <div>
+          <h1 className="ds-page-title">Ingesta mensual</h1>
+          <p className="ds-page-subtitle">
+            Arrastrá uno o varios archivos. El sistema detecta el tipo y período de cada uno.
+          </p>
+        </div>
       </header>
 
       {errorMessage && (
@@ -277,12 +279,16 @@ export function IngestaPage() {
             setIsDragging(false);
             handleFiles(e.dataTransfer.files);
           }}
-          className={clsx(
-            'border-2 border-dashed rounded-xl p-14 text-center cursor-pointer transition-colors',
-            isDragging
-              ? 'border-brand-500 bg-brand-50'
-              : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50',
-          )}
+          className="text-center cursor-pointer transition-all"
+          style={{
+            border: '1.5px dashed',
+            borderColor: isDragging ? 'var(--gain)' : 'var(--border)',
+            background: isDragging
+              ? 'oklch(0.78 0.18 152 / 0.04)'
+              : 'var(--bg-surface)',
+            borderRadius: 'var(--r-lg)',
+            padding: '52px 32px 40px',
+          }}
         >
           <input
             ref={inputRef}
@@ -293,21 +299,35 @@ export function IngestaPage() {
             onChange={(e) => e.target.files && handleFiles(e.target.files)}
           />
           {stage.type === 'sniffing' ? (
-            <div className="flex flex-col items-center gap-3 text-slate-500">
-              <Loader2 size={32} className="animate-spin text-brand-500" />
+            <div className="flex flex-col items-center gap-3" style={{ color: 'var(--fg-tertiary)' }}>
+              <Loader2 size={32} className="animate-spin" style={{ color: 'var(--neutral)' }} />
               <p className="text-sm font-medium">Analizando archivos…</p>
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-3 text-slate-400">
-              <Upload size={32} />
+            <div className="flex flex-col items-center gap-3">
+              <div
+                className="grid place-items-center"
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 'var(--r-lg)',
+                  background: 'var(--bg-surface-2)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--fg-secondary)',
+                }}
+              >
+                <Upload size={24} />
+              </div>
               <div>
-                <p className="text-sm font-medium text-slate-600">
+                <p className="text-base font-medium" style={{ color: 'var(--fg-primary)' }}>
                   Arrastrá o hacé click para seleccionar
                 </p>
-                <p className="text-xs mt-1">
+                <p className="text-xs mt-1" style={{ color: 'var(--fg-tertiary)' }}>
                   Mayor por empresa (uno o más) · Inventario consolidado
                 </p>
-                <p className="text-xs text-slate-300 mt-0.5">.xls / .xlsx</p>
+                <p className="text-[11px] mt-2" style={{ color: 'var(--fg-quaternary)' }}>
+                  .xls / .xlsx
+                </p>
               </div>
             </div>
           )}

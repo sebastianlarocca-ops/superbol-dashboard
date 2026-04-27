@@ -58,42 +58,42 @@ const SERIES: SeriesDef[] = [
   {
     key: 'ventas',
     label: 'Ventas',
-    color: '#0284c7', // brand-600
+    color: 'oklch(0.72 0.16 260)', // neutral indigo
     defaultOn: true,
     pick: (p) => p.ventas,
   },
   {
     key: 'cmvAjustado',
     label: 'CMV ajustado',
-    color: '#dc2626', // red-600
+    color: 'oklch(0.70 0.21 25)', // loss
     defaultOn: true,
     pick: (p) => p.cmvAjustado,
   },
   {
     key: 'resultadoNeto',
     label: 'Resultado neto',
-    color: '#059669', // emerald-600
+    color: 'oklch(0.78 0.18 152)', // gain
     defaultOn: true,
     pick: (p) => p.resultadoNeto,
   },
   {
     key: 'gastosAdministrativos',
     label: 'Gastos admin.',
-    color: '#9333ea', // purple-600
+    color: 'oklch(0.72 0.16 290)', // violet
     defaultOn: false,
     pick: (p) => findSubrubro(p, 'egreso', 'Gastos administrativos'),
   },
   {
     key: 'cif',
     label: 'CIF',
-    color: '#ea580c', // orange-600
+    color: 'oklch(0.82 0.16 85)', // amber
     defaultOn: false,
     pick: (p) => findSubrubro(p, 'egreso', 'CIF'),
   },
   {
     key: 'resultadosFinancieros',
     label: 'Result. financieros',
-    color: '#0891b2', // cyan-600
+    color: 'oklch(0.72 0.14 230)', // sky
     defaultOn: false,
     pick: (p) => findSubrubro(p, 'ingreso', 'Resultados financieros'),
   },
@@ -166,22 +166,33 @@ export function EvolutionChart({ serie }: EvolutionChartProps) {
       <div className="w-full h-72">
         <ResponsiveContainer>
           <LineChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="periodo" stroke="#64748b" tick={{ fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.012 255 / 0.3)" />
+            <XAxis
+              dataKey="periodo"
+              stroke="oklch(0.58 0.010 255)"
+              tick={{ fontSize: 12, fill: 'oklch(0.58 0.010 255)' }}
+              tickLine={{ stroke: 'oklch(0.30 0.012 255 / 0.3)' }}
+              axisLine={{ stroke: 'oklch(0.30 0.012 255 / 0.3)' }}
+            />
             <YAxis
-              stroke="#64748b"
-              tick={{ fontSize: 11 }}
+              stroke="oklch(0.58 0.010 255)"
+              tick={{ fontSize: 11, fill: 'oklch(0.58 0.010 255)' }}
+              tickLine={{ stroke: 'oklch(0.30 0.012 255 / 0.3)' }}
+              axisLine={{ stroke: 'oklch(0.30 0.012 255 / 0.3)' }}
               tickFormatter={(v: number) => fmtMoneyCompact(v)}
               width={60}
             />
             <Tooltip
               formatter={(v) => (typeof v === 'number' ? `${prefix}${fmtMoneyCompact(v)}` : String(v))}
-              labelStyle={{ color: '#0f172a', fontWeight: 500 }}
+              labelStyle={{ color: 'var(--fg-primary)', fontWeight: 500 }}
               contentStyle={{
                 fontSize: 12,
-                borderRadius: 6,
-                border: '1px solid #e2e8f0',
+                borderRadius: 10,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-elevated)',
+                color: 'var(--fg-primary)',
               }}
+              cursor={{ stroke: 'var(--border-strong)' }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             {SERIES.filter((s) => enabled[s.key]).map((s) => (
