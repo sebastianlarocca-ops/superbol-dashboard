@@ -57,6 +57,7 @@ export function LoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="sb-input w-full"
+              style={{ background: 'var(--bg-canvas)', color: 'var(--fg-primary)' }}
               required
             />
           </div>
@@ -76,6 +77,7 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="sb-input w-full"
+              style={{ background: 'var(--bg-canvas)', color: 'var(--fg-primary)' }}
               required
             />
           </div>
