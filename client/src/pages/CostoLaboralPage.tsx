@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/axios';
-import { fmtMoney, fmtMoneyCompact, fmtPeriodo } from '../lib/format';
+import { fmtPeriodo } from '../lib/format';
+import { useCurrency } from '../context/CurrencyContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,8 @@ const fmtDate = (iso: string) =>
 export function CostoLaboralPage() {
   const [periodo, setPeriodo] = useState<string | null>(null);
   const [expandedSector, setExpandedSector] = useState<string | null>(null);
+  const { fmt, fmtCompact, currency } = useCurrency();
+  const prefix = currency === 'ARS' ? '$ ' : '';
 
   // Period list from payroll batches
   const { data: batchesData, isLoading: batchesLoading } = useQuery({
@@ -203,9 +206,9 @@ export function CostoLaboralPage() {
             />
             <KpiCard
               label="Costo total nómina"
-              value={`$ ${fmtMoneyCompact(grandTotal)}`}
+              value={`${prefix}${fmtCompact(grandTotal, periodo)}`}
               highlight
-              sub={`$ ${fmtMoney(grandTotal)}`}
+              sub={`${prefix}${fmt(grandTotal, periodo)}`}
             />
           </div>
 
@@ -265,19 +268,19 @@ export function CostoLaboralPage() {
                           {s.activos}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-xs" style={{ color: 'var(--fg-secondary)' }}>
-                          $ {fmtMoneyCompact(s.sueldoBase)}
+                          {prefix}{fmtCompact(s.sueldoBase, periodo)}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-xs" style={{ color: 'var(--fg-secondary)' }}>
-                          $ {fmtMoneyCompact(s.antiguedad)}
+                          {prefix}{fmtCompact(s.antiguedad, periodo)}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-xs" style={{ color: 'var(--fg-secondary)' }}>
-                          $ {fmtMoneyCompact(s.cargasSociales)}
+                          {prefix}{fmtCompact(s.cargasSociales, periodo)}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-xs" style={{ color: 'var(--fg-secondary)' }}>
-                          $ {fmtMoneyCompact(s.ctaDos)}
+                          {prefix}{fmtCompact(s.ctaDos, periodo)}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums font-semibold" style={{ color: 'var(--fg-primary)' }}>
-                          $ {fmtMoneyCompact(s.total)}
+                          {prefix}{fmtCompact(s.total, periodo)}
                         </td>
                         <td className="px-4 py-3 text-right" style={{ color: 'var(--fg-tertiary)' }}>
                           <div className="flex items-center justify-end gap-2">
@@ -343,19 +346,19 @@ export function CostoLaboralPage() {
                           </td>
                           <td className="px-4 py-2 text-right text-[10px]" style={{ color: 'var(--fg-quaternary)' }}>—</td>
                           <td className="px-4 py-2 text-right tabular-nums text-xs" style={{ color: 'var(--fg-secondary)' }}>
-                            {r.esBaja ? '—' : `$ ${fmtMoneyCompact(r.sueldoSinAntig)}`}
+                            {r.esBaja ? '—' : `${prefix}${fmtCompact(r.sueldoSinAntig, periodo)}`}
                           </td>
                           <td className="px-4 py-2 text-right tabular-nums text-xs" style={{ color: 'var(--fg-secondary)' }}>
-                            {r.esBaja ? '—' : `$ ${fmtMoneyCompact(r.antiguedad)}`}
+                            {r.esBaja ? '—' : `${prefix}${fmtCompact(r.antiguedad, periodo)}`}
                           </td>
                           <td className="px-4 py-2 text-right tabular-nums text-xs" style={{ color: 'var(--fg-secondary)' }}>
-                            {r.esBaja ? '—' : `$ ${fmtMoneyCompact(r.cargasSociales)}`}
+                            {r.esBaja ? '—' : `${prefix}${fmtCompact(r.cargasSociales, periodo)}`}
                           </td>
                           <td className="px-4 py-2 text-right tabular-nums text-xs" style={{ color: 'var(--fg-secondary)' }}>
-                            {r.esBaja ? '—' : `$ ${fmtMoneyCompact(r.ctaDos)}`}
+                            {r.esBaja ? '—' : `${prefix}${fmtCompact(r.ctaDos, periodo)}`}
                           </td>
                           <td className="px-4 py-2 text-right tabular-nums text-xs font-medium" style={{ color: r.esBaja ? 'var(--fg-quaternary)' : 'var(--fg-primary)' }}>
-                            {r.esBaja ? '—' : `$ ${fmtMoneyCompact(r.totalSueldoMasCargas)}`}
+                            {r.esBaja ? '—' : `${prefix}${fmtCompact(r.totalSueldoMasCargas, periodo)}`}
                           </td>
                           <td className="px-4 py-2" />
                         </tr>
@@ -379,19 +382,19 @@ export function CostoLaboralPage() {
                     {sectorSummaries.reduce((s, r) => s + r.activos, 0)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-xs font-medium" style={{ color: 'var(--fg-secondary)' }}>
-                    $ {fmtMoneyCompact(sectorSummaries.reduce((s, r) => s + r.sueldoBase, 0))}
+                    {prefix}{fmtCompact(sectorSummaries.reduce((s, r) => s + r.sueldoBase, 0), periodo)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-xs font-medium" style={{ color: 'var(--fg-secondary)' }}>
-                    $ {fmtMoneyCompact(sectorSummaries.reduce((s, r) => s + r.antiguedad, 0))}
+                    {prefix}{fmtCompact(sectorSummaries.reduce((s, r) => s + r.antiguedad, 0), periodo)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-xs font-medium" style={{ color: 'var(--fg-secondary)' }}>
-                    $ {fmtMoneyCompact(sectorSummaries.reduce((s, r) => s + r.cargasSociales, 0))}
+                    {prefix}{fmtCompact(sectorSummaries.reduce((s, r) => s + r.cargasSociales, 0), periodo)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-xs font-medium" style={{ color: 'var(--fg-secondary)' }}>
-                    $ {fmtMoneyCompact(sectorSummaries.reduce((s, r) => s + r.ctaDos, 0))}
+                    {prefix}{fmtCompact(sectorSummaries.reduce((s, r) => s + r.ctaDos, 0), periodo)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-bold" style={{ color: 'var(--fg-primary)' }}>
-                    $ {fmtMoneyCompact(grandTotal)}
+                    {prefix}{fmtCompact(grandTotal, periodo)}
                   </td>
                   <td className="px-4 py-3" />
                 </tr>
