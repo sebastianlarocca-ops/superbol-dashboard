@@ -8,6 +8,8 @@ import { MovimientosManualesPage } from './pages/MovimientosManualesPage';
 import { CotizacionesPage } from './pages/CotizacionesPage';
 import { MovimientosPage } from './pages/MovimientosPage';
 import { ReglasPage } from './pages/ReglasPage';
+import { NominaIngestaPage } from './pages/NominaIngestaPage';
+import { CostoLaboralPage } from './pages/CostoLaboralPage';
 
 export default function App() {
   return (
@@ -15,9 +17,11 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/ingesta" element={<IngestaPage />} />
+        <Route path="/nomina-ingesta" element={<NominaIngestaPage />} />
         <Route path="/movimientos-manuales" element={<MovimientosManualesPage />} />
         <Route path="/resultados" element={<ResultadosPage />} />
         <Route path="/cmv" element={<CMVPage />} />
+        <Route path="/costo-laboral" element={<CostoLaboralPage />} />
         <Route path="/movimientos" element={<MovimientosPage />} />
         <Route path="/cotizaciones" element={<CotizacionesPage />} />
         <Route path="/reglas" element={<ReglasPage />} />

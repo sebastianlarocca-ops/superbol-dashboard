@@ -5,6 +5,7 @@ import ingestaRoutes from './ingesta';
 import reportsRoutes from './reports';
 import movimientosRoutes from './movimientos';
 import cotizacionesRoutes from './cotizaciones';
+import nominaRoutes from './nomina';
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use('/ingesta', ingestaRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/movimientos', movimientosRoutes);
 router.use('/cotizaciones', cotizacionesRoutes);
+router.use('/nomina', nominaRoutes);
 
 export default router;

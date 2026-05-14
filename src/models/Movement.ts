@@ -33,7 +33,7 @@ const movementSchema = new Schema(
     },
     sourceType: {
       type: String,
-      enum: ['ledger', 'cmv-calc', 'manual'],
+      enum: ['ledger', 'cmv-calc', 'manual', 'payroll'],
       default: 'ledger',
       required: true,
     },
@@ -75,7 +75,7 @@ export type Movement = {
   fechaISO: Date;
   archivo: string;
   ingestionBatchId: Types.ObjectId | null;
-  sourceType: 'ledger' | 'cmv-calc' | 'manual';
+  sourceType: 'ledger' | 'cmv-calc' | 'manual' | 'payroll';
   asiento: number;
   numeroCuenta: string;
   nombreCuenta: string;
