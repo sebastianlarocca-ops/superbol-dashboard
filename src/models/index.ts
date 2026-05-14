@@ -18,3 +18,9 @@ export type { InventoryItem } from './InventoryItem';
 
 export { DolarCotizacionModel } from './DolarCotizacion';
 export type { DolarCotizacion } from './DolarCotizacion';
+
+export { PayrollBatchModel } from './PayrollBatch';
+export type { PayrollBatch } from './PayrollBatch';
+
+export { PayrollRecordModel } from './PayrollRecord';
+export type { PayrollRecord } from './PayrollRecord';

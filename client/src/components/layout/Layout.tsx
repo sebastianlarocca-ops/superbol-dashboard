@@ -8,6 +8,7 @@ import {
   ListChecks,
   Settings,
   TrendingUp,
+  Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { CurrencyToggle } from '../CurrencyToggle';
@@ -22,6 +23,7 @@ const sections: {
       { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
       { to: '/resultados', label: 'Estado de resultados', icon: FileText },
       { to: '/cmv', label: 'CMV', icon: Calculator },
+      { to: '/costo-laboral', label: 'Costo Laboral', icon: Users },
       { to: '/movimientos', label: 'Movimientos', icon: ListChecks },
     ],
   },
@@ -29,6 +31,7 @@ const sections: {
     label: 'Datos',
     items: [
       { to: '/ingesta', label: 'Ingesta', icon: Upload },
+      { to: '/nomina-ingesta', label: 'Ingesta Nómina', icon: Users },
       { to: '/movimientos-manuales', label: 'Mov. manuales', icon: PenSquare },
       { to: '/cotizaciones', label: 'Cotizaciones', icon: TrendingUp },
       { to: '/reglas', label: 'Reglas', icon: Settings },
