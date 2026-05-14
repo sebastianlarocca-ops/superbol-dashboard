@@ -87,15 +87,45 @@ Endpoints: `/reports/pnl`, `/reports/balance`, `/reports/cmv`, `/reports/movemen
 - **All filters operate on the reimputed fields** (`numeroCuentaReimputada`, `rubroReimputada`, `subrubro`), never the raw ledger fields.
 - **Anulaciones are excluded from P&L by default** (Sebastián tags dueño retiros as anuladas to keep them out of the P&L while preserving the data); pass `includeAnulados=true` to include them.
 - `Cuentas puentes` is hidden from P&L — unclassified movs surface only as warnings during ingestion.
+- `/reports/periodos` aggregates periods from both `IngestionBatch` (ledger/inventory) and `PayrollBatch` (nómina), so a period appears in the selector as soon as any source has data for it.
 
 ### CMV ([src/services/cmv/CMVCalculator.ts](src/services/cmv/CMVCalculator.ts))
 
 - "Compras" comes from movements on accounts `1600`, `1620`, `6200` matched **pre-reimputation** (`numeroCuenta`, not `numeroCuentaReimputada`), so the calculation stays deterministic regardless of rule state.
-- The calculator emits four pseudo-movements (CMV bruto, ajuste de stock, costo financiero RP, costo financiero RN) attached to virtual cuentas `6200`, `6900`, `7900`. These are stored as `Movement` docs with `sourceType: 'cmv-calc'` so they appear in P&L alongside ledger movs.
+- The calculator emits pseudo-movements attached to virtual cuentas `6200`, `6900`, `7900`. These are stored as `Movement` docs with `sourceType: 'cmv-calc'` so they appear in P&L alongside ledger movs.
+
+### Payroll / Nómina ([src/services/payroll/](src/services/payroll/))
+
+`POST /api/v1/nomina` accepts one `.xlsx` payroll file (the multi-sheet "COSTO NOMINA POR SECTOR" format produced by HR). The pipeline:
+
+1. Detects `periodo` from the filename pattern `MM-YYYY` (e.g. `02-2026` → `02/2026`); falls back to a `periodo` body param.
+2. **Idempotency:** rejects with 409 if a successful `PayrollBatch` already exists for the period; `force=true` deletes it and re-ingests.
+3. **[PayrollParser](src/services/payroll/PayrollParser.ts)** iterates the 10 sector sheets (skips `Antiguedad`):
+   - Detects schema variant: most sheets have columns `[Nomina, Empresa, CategoriaRecibo, Sector, ...]`; `MANTENIMIENTO` omits the `Empresa` column — detected by checking whether `header[1]` contains "empresa".
+   - `sector` = sheet name (e.g. `PRODUCCION`); `subSector` = the row's `SECTOR` column (can be more granular, e.g. `IMPRESIÓN`).
+   - Enriches each record with `fechaIngreso` and `anosAntiguedad` from the `Antiguedad` sheet via a name-normalized lookup.
+   - Employees with `subSector = "BAJA"` are kept with `esBaja: true` and excluded from cost totals and pseudo-movements.
+4. Inserts `PayrollRecord` docs into `payroll_records`.
+5. Generates **one pseudo-movement per sector** (`sourceType: 'payroll'`, cuenta `6300 Costo Laboral`, subrubro `Nómina`, `empresa: SUPERBOL`, `haber = sector total`). These land in the `movements` collection so the P&L picks them up automatically.
+6. Marks `PayrollBatch` as `success` with stats.
+
+Additional endpoints: `GET /nomina/check?periodo=`, `GET /nomina/records?periodo=[&sector=][&esBaja=]`, `GET /nomina`, `GET /nomina/:id`, `DELETE /nomina/:id`.
 
 ### Models ([src/models/](src/models/))
 
-`Movement`, `IngestionBatch`, `InventoryItem`, `ReimputationRule`, `AnulacionRule`, `SubrubroMap`, `DolarCotizacion`. Every `Movement` carries `ingestionBatchId` (FK to `IngestionBatch`) and `sourceType: 'ledger' | 'cmv-calc' | 'manual'`.
+| Model | Collection | Notes |
+|---|---|---|
+| `Movement` | `movements` | `sourceType: 'ledger' \| 'cmv-calc' \| 'manual' \| 'payroll'` |
+| `IngestionBatch` | `ingestion_batches` | ledger + inventory uploads |
+| `InventoryItem` | `inventory_items` | |
+| `PayrollBatch` | `payroll_batches` | one per period, unique on `(periodo, status=success)` |
+| `PayrollRecord` | `payroll_records` | one row per employee per period |
+| `ReimputationRule` | `reimputation_rules` | |
+| `AnulacionRule` | `anulacion_rules` | |
+| `SubrubroMap` | `subrubro_maps` | |
+| `DolarCotizacion` | `dolar_cotizaciones` | |
+
+Every `Movement` carries `ingestionBatchId` (FK to `IngestionBatch`, or to `PayrollBatch` for `sourceType='payroll'`) and `sourceType`.
 
 ### Rules are sourced from JSON
 
@@ -103,7 +133,26 @@ Endpoints: `/reports/pnl`, `/reports/balance`, `/reports/cmv`, `/reports/movemen
 
 ### Frontend pages ([client/src/pages/](client/src/pages/))
 
-Routes wired in [App.tsx](client/src/App.tsx): Dashboard, Ingesta (drag-drop with auto file-type detection via the `/sniff` endpoint), Resultados (P&L), CMV, Movimientos (ledger browser with Excel-style filters), Movimientos manuales, Cotizaciones (ARS/USD dólar bolsa), Reglas (rule ABM). `CurrencyContext` toggles ARS/USD across the app.
+Routes wired in [App.tsx](client/src/App.tsx):
+
+| Route | Page | Section |
+|---|---|---|
+| `/` | Dashboard | Análisis |
+| `/resultados` | Estado de Resultados (P&L) | Análisis |
+| `/cmv` | CMV | Análisis |
+| `/costo-laboral` | Costo Laboral | Análisis |
+| `/movimientos` | Movimientos (ledger browser) | Análisis |
+| `/ingesta` | Ingesta mensual (mayores + inventario) | Datos |
+| `/nomina-ingesta` | Ingesta Nómina | Datos |
+| `/movimientos-manuales` | Movimientos manuales | Datos |
+| `/cotizaciones` | Cotizaciones ARS/USD | Datos |
+| `/reglas` | Reglas (ABM reimputaciones, anulaciones, subrubros) | Datos |
+
+`CurrencyContext` toggles ARS/USD across the entire app — all monetary values in all pages use `fmt(ars, periodo)` / `fmtCompact(ars, periodo)` from the context so conversion is automatic.
+
+**Costo Laboral page** (`/costo-laboral`): fetches `/nomina/records?periodo=`, aggregates by sector on the frontend, renders a table with expandable rows (click sector → employee detail with fechaIngreso, anosAntiguedad, subSector). Period selector is driven by `/nomina` (payroll batches), not `/reports/periodos`.
+
+**Ingesta Nómina page** (`/nomina-ingesta`): single-file drag-drop. Detects period from filename (`MM-YYYY` pattern), shows editable period field, checks for conflicts via `/nomina/check`, supports force-replace.
 
 ## Deploy
 
