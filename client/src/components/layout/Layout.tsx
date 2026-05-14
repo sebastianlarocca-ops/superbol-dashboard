@@ -54,6 +54,7 @@ export function Layout() {
   };
 
   return (
+    <CurrencyProvider>
     <div
       className="flex h-screen"
       style={{ background: 'var(--bg-canvas)' }}
@@ -131,10 +132,9 @@ export function Layout() {
       </aside>
 
       <main className="flex-1 overflow-auto" style={{ background: 'var(--bg-canvas)' }}>
-        <CurrencyProvider>
-          <Outlet />
-        </CurrencyProvider>
+        <Outlet />
       </main>
     </div>
+    </CurrencyProvider>
   );
 }
