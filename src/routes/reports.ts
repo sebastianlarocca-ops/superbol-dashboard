@@ -5,6 +5,7 @@ import {
   InventoryItemModel,
   MovementModel,
 } from '../models';
+import { PayrollBatchModel } from '../models/PayrollBatch';
 import { queryBalance, queryEvolucion, queryPnL } from '../services/reports/queries';
 import { EMPRESAS, Empresa } from '../types/empresa';
 
@@ -115,13 +116,19 @@ function parsePeriodFilter(
  */
 router.get('/periodos', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const batches = await IngestionBatchModel.find({ status: 'success' })
-      .sort({ createdAt: -1 })
-      .select('periodo createdAt stats kind')
-      .lean();
-    // Aggregate per periodo: sum movs across all batches (ledger + inventory
-    // pseudo-movs), keep latest createdAt.
+    const [batches, payrollBatches] = await Promise.all([
+      IngestionBatchModel.find({ status: 'success' })
+        .sort({ createdAt: -1 })
+        .select('periodo createdAt stats kind')
+        .lean(),
+      PayrollBatchModel.find({ status: 'success' })
+        .sort({ createdAt: -1 })
+        .select('periodo createdAt stats')
+        .lean(),
+    ]);
+
     const byPeriodo = new Map<string, { createdAt: Date; movs: number }>();
+
     for (const b of batches) {
       const cur = byPeriodo.get(b.periodo);
       const ts = b.createdAt as Date;
@@ -133,13 +140,29 @@ router.get('/periodos', async (_req: Request, res: Response, next: NextFunction)
         if (ts > cur.createdAt) cur.createdAt = ts;
       }
     }
+
+    // Merge payroll batches — each contributes its pseudoMovementsInserted
+    // to the period's movement count so the selector shows the period even
+    // when no ledger has been uploaded yet for that month.
+    for (const pb of payrollBatches) {
+      const cur = byPeriodo.get(pb.periodo);
+      const ts = pb.createdAt as Date;
+      const movs = pb.stats?.pseudoMovementsInserted ?? 0;
+      if (!cur) {
+        byPeriodo.set(pb.periodo, { createdAt: ts, movs });
+      } else {
+        cur.movs += movs;
+        if (ts > cur.createdAt) cur.createdAt = ts;
+      }
+    }
+
     const periodos = [...byPeriodo.entries()]
       .map(([periodo, v]) => ({
         periodo,
         createdAt: v.createdAt.toISOString(),
         movs: v.movs,
       }))
-      .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+      .sort((a, b) => (b.periodo > a.periodo ? 1 : -1));
     res.json({ count: periodos.length, periodos });
   } catch (err) {
     next(err);
