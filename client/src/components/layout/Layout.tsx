@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { CurrencyProvider } from '../../context/CurrencyContext';
 import {
   LayoutDashboard,
   Upload,
@@ -130,7 +131,9 @@ export function Layout() {
       </aside>
 
       <main className="flex-1 overflow-auto" style={{ background: 'var(--bg-canvas)' }}>
-        <Outlet />
+        <CurrencyProvider>
+          <Outlet />
+        </CurrencyProvider>
       </main>
     </div>
   );
