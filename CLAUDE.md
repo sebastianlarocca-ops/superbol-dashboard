@@ -21,6 +21,7 @@ npm run build        # tsc → ./dist
 npm start            # node dist/app.js (uses built output)
 npm run lint         # eslint src --ext .ts
 npm run seed:rules   # idempotent sync of src/seed/data/*.json → Mongo (see seedRules.ts)
+npm run seed:users   # create admin + cliente users (idempotent — skips if already exist)
 ```
 
 Frontend (run from `client/`):
@@ -33,7 +34,7 @@ npm run preview      # preview the production build
 
 There is no test suite. CI ([.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)) only runs `npm run build` for both packages.
 
-`MONGO_URI` is required (see [.env.example](.env.example)). The backend will not start without it.
+`MONGO_URI` is required (see [.env.example](.env.example)). The backend will not start without it. Auth also requires `JWT_SECRET`, `ADMIN_PASSWORD`, and `CLIENT_PASSWORD` (see `.env.example`).
 
 ## scratch/ — local dev sandbox
 
@@ -78,9 +79,18 @@ Three stages run in this order, **and the order matters**:
 
 Warnings are deduplicated by case key with an `occurrences` counter — never emit one warning per movement. A `Cuentas puentes` rubro after reimputation also produces an `UNCLASSIFIED_REIMPUTACION` warning prompting the user to add a rule.
 
+### Auth ([src/routes/auth.ts](src/routes/auth.ts), [src/middleware/authenticate.ts](src/middleware/authenticate.ts))
+
+- `POST /api/v1/auth/login` — accepts `{ username, password }`, returns `{ token, user: { username, role } }`. JWT expires in 7 days.
+- `GET /api/v1/auth/me` — returns the authenticated user from the token.
+- All non-auth routes require a `Bearer` token via `authenticate` middleware. Write routes (ingesta, nómina, reglas, cotizaciones) additionally require `requireAdmin`.
+- Two roles: `admin` (full access) and `cliente` (Análisis + Reglas read-only, no Datos section except Reglas).
+- Users are stored in the `users` collection (`UserModel`). Passwords are hashed with bcrypt (12 rounds). `npm run seed:users` creates the two default users using `ADMIN_PASSWORD` / `CLIENT_PASSWORD` from env — skips if they already exist.
+- Frontend: `AuthContext` ([client/src/context/AuthContext.tsx](client/src/context/AuthContext.tsx)) stores the JWT in `localStorage`, exposes `user` and `logout`. `ProtectedRoute` redirects unauthenticated users to `/login`. `Layout` filters nav links by role. `CurrencyProvider` wraps the layout content (inside `Layout`, not in the router) to avoid mounting before auth resolves.
+
 ### Reports ([src/routes/reports.ts](src/routes/reports.ts), [src/services/reports/queries.ts](src/services/reports/queries.ts))
 
-Endpoints: `/reports/pnl`, `/reports/balance`, `/reports/cmv`, `/reports/movements`. Conventions across all of them:
+Endpoints: `/reports/pnl`, `/reports/balance`, `/reports/cmv`, `/reports/movements`, `/reports/evolucion`. Conventions across all of them:
 
 - `periodo` (`MM/YYYY`) is required.
 - `empresa` is optional; omitted = consolidated.
@@ -88,6 +98,7 @@ Endpoints: `/reports/pnl`, `/reports/balance`, `/reports/cmv`, `/reports/movemen
 - **Anulaciones are excluded from P&L by default** (Sebastián tags dueño retiros as anuladas to keep them out of the P&L while preserving the data); pass `includeAnulados=true` to include them.
 - `Cuentas puentes` is hidden from P&L — unclassified movs surface only as warnings during ingestion.
 - `/reports/periodos` aggregates periods from both `IngestionBatch` (ledger/inventory) and `PayrollBatch` (nómina), so a period appears in the selector as soon as any source has data for it.
+- `/reports/evolucion` returns one point per successful ingestion period (sorted ASC). Each point includes `ventas`, `cmvAjustado`, `resultadoNeto`, `ingresosTotal`, `egresosTotal`, and full `subrubrosIngreso`/`subrubrosEgreso` arrays. Used by the Dashboard for KPI deltas and the `EvolutionChart`.
 
 ### CMV ([src/services/cmv/CMVCalculator.ts](src/services/cmv/CMVCalculator.ts))
 
@@ -124,6 +135,7 @@ Additional endpoints: `GET /nomina/check?periodo=`, `GET /nomina/records?periodo
 | `AnulacionRule` | `anulacion_rules` | |
 | `SubrubroMap` | `subrubro_maps` | |
 | `DolarCotizacion` | `dolar_cotizaciones` | |
+| `User` | `users` | `role: 'admin' \| 'cliente'`, password hashed with bcrypt |
 
 Every `Movement` carries `ingestionBatchId` (FK to `IngestionBatch`, or to `PayrollBatch` for `sourceType='payroll'`) and `sourceType`.
 
@@ -149,6 +161,12 @@ Routes wired in [App.tsx](client/src/App.tsx):
 | `/reglas` | Reglas (ABM reimputaciones, anulaciones, subrubros) | Datos |
 
 `CurrencyContext` toggles ARS/USD across the entire app — all monetary values in all pages use `fmt(ars, periodo)` / `fmtCompact(ars, periodo)` from the context so conversion is automatic.
+
+**Dashboard page** (`/`): fetches `/reports/evolucion` once (no periodo param). Renders:
+- `HeroCard` — resultado neto del período seleccionado con delta % vs el anterior.
+- `KPICard` ×4 — Ventas, CMV ajustado, Margen bruto %, Margen neto % con delta vs período anterior.
+- `EvolutionChart` — gráfico multi-período con toggle **Líneas / Barras apiladas**. Modo Líneas: series configurables (Ventas, CMV, Resultado neto, Gastos admin, CIF, Resultados financieros). Modo Barras: `ComposedChart` con barras apiladas verdes (subrubros de ingresos, positivos) y rojas (subrubros de egresos, negativos bajo el eje 0) + línea de Resultado neto superpuesta. Subrubros se derivan dinámicamente de `subrubrosIngreso`/`subrubrosEgreso` de la serie.
+- `PnLWithPercentages` — tabla de P&L del período con columna de % sobre ventas y delta vs período anterior.
 
 **Costo Laboral page** (`/costo-laboral`): fetches `/nomina/records?periodo=`, aggregates by sector on the frontend, renders a table with expandable rows (click sector → employee detail with fechaIngreso, anosAntiguedad, subSector). Period selector is driven by `/nomina` (payroll batches), not `/reports/periodos`.
 
